@@ -7,8 +7,6 @@ module ysbase.templating;
 import std.traits;
 import std.meta;
 
-enum isCopyable(T) = __traits(compiles, (T s) { T c = s; });
-
 /** given [a, b, c, d], evaluates to fn(fn(fn(a, b), c), d) with CTFE
  * if A is empty, returns Default, as long as Default != void */
 template reduce(alias fn, alias Default, A...)

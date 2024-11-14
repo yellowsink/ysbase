@@ -10,7 +10,7 @@
 		},
 		{
 			"name": "stdxalloc",
-			"dependencies": { "stdx-allocator": "~>3.0.2" },
+			"dependencies": { "stdx-allocator": ">=2.0.0" },
 			"versions": ["YSBase_StdxAlloc"]
 		}
 	]
