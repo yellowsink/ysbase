@@ -1,0 +1,17 @@
+{
+	"authors": ["Hazel Atkinson"],
+	"copyright": "Copyright © 2024, Hazel Atkinson",
+	"description": "Hazel's base utilities for D programming",
+	"license": "public domain",
+	"name": "ysbase",
+	"configurations": [
+		{
+			"name": "library"
+		},
+		{
+			"name": "stdxalloc",
+			"dependencies": { "stdx-allocator": "~>3.0.2" },
+			"versions": ["YSBase_StdxAlloc"]
+		}
+	]
+}

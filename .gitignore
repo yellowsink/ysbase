@@ -1,0 +1,16 @@
+.dub
+docs.json
+__dummy.html
+docs/
+/libysbase
+libysbase.so
+libysbase.dylib
+libysbase.dll
+libysbase.a
+libysbase.lib
+libysbase-test-*
+*.exe
+*.pdb
+*.o
+*.obj
+*.lst
