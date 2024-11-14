@@ -4,19 +4,17 @@ module ysbase;
 
 template transmute(R)
 {
-	R transmute(S)(S val) if (S.sizeof == R.sizeof)
+	R transmute(S)(ref S val) if (S.sizeof == R.sizeof)
 	{
 		// this is somewhat weird compared to the standard *(cast(R*) &src); formulation, but it suppresses copies.
 		// this allows much worse crimes:tm: to be committed
-		// for trivial cases i would expect a decent compiler to optimize this identically.
 
-		Uncopyable u = void;
+		// this is *identical* (tied fastest) to the naive for trivial types,
+		// and the fastest implementation for non-trivial types. https://godbolt.org/z/av7x1ejrP
+
+		R u = void;
 		(cast(ubyte*) &u)[0..S.sizeof] = (cast(ubyte*) &val)[0..S.sizeof];
 		return u;
 	}
 }
 
-// testing
-private struct Uncopyable { @disable this(this); }
-
-static assert(__traits(compiles, transmute!Uncopyable(Uncopyable.init)));
