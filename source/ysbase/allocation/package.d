@@ -44,16 +44,16 @@ else
 	// use the general allocator on top of c malloc() by default
 	alias YSBAllocator = YSBGeneralAllocator!Mallocator;
 
-	// TODO: this throws a "No GC was initialized" error.
-	/* version (YSBase_NoGlobalAlloc) {}
+	version (YSBase_NoGlobalAlloc) {}
 	else
-		// `theAllocator` will be created on top of `processAllocator` if it does not exist, when first accessed.
-		// without this set, `processAllocator` would be automatically set to a `GCAllocator` when first accessed.
-		pragma(crt_constructor)
-		private extern (C) void setGlobalAllocators()
+		static this()
 		{
-			processAllocator = sharedAllocatorObject(YSBAllocator());
-		} */
+			// this will run in newly created threads as well.
+			// this also gives each thread its own memory which makes
+			// deallocating it from the wrong thread *spicy*
+			// TODO: make YSBGeneralAllocator shared-safe
+			theAllocator = allocatorObject(YSBAllocator());
+		}
 }
 
 // TODO: once I've got a way to forward attributes, redefine make, etc.
