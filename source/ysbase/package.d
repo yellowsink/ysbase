@@ -4,16 +4,27 @@ module ysbase;
 
 template transmute(R)
 {
+pragma(inline, true):
+
 	R transmute(S)(ref S val) if (S.sizeof == R.sizeof)
 	{
-		// this is somewhat weird compared to the standard *(cast(R*) &src); formulation, but it suppresses copies.
-		// this allows much worse crimes:tm: to be committed
+		/* this is somewhat weird compared to the standard *(cast(R*) &src); formulation, but it suppresses copies.
+		   this allows much worse crimes:tm: to be committed
 
-		// this is *identical* (tied fastest) to the naive for trivial types,
-		// and the fastest implementation for non-trivial types. https://godbolt.org/z/av7x1ejrP
+		   this is *identical* (tied fastest) to the naive for trivial types,
+		   and the fastest implementation for non-trivial types.
+		   showing that its fast with a ubyte[] slice copy, on LLVM: https://godbolt.org/z/av7x1ejrP
+
+		   swapping from a ubyte[] slice to a ubyte[N]* fixes our parity on GDC: https://godbolt.org/z/3vosfb6fM
+		   note also that while LDC will inline this anyway, GDC won't.
+		   one more note: GDC can actually supress the copy on the naive version sometimes, LDC can't. interesting.
+
+		   dmd is beyond even trying to optimise, its just bad lol, but thats okay, we all have our flaws.
+		   wow, i really have over-engineered transmute() huh?
+		 */
 
 		R u = void;
-		(cast(ubyte*) &u)[0..S.sizeof] = (cast(ubyte*) &val)[0..S.sizeof];
+		*(cast(ubyte[S.sizeof]*)&r) = *(cast(ubyte[S.sizeof]*)&val);
 		return u;
 	}
 
