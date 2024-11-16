@@ -24,7 +24,7 @@ pragma(inline, true):
 		 */
 
 		R u = void;
-		*(cast(ubyte[S.sizeof]*)&r) = *(cast(ubyte[S.sizeof]*)&val);
+		*(cast(ubyte[S.sizeof]*) &u) = *(cast(ubyte[S.sizeof]*) &val);
 		return u;
 	}
 
@@ -38,4 +38,3 @@ pragma(inline, true):
 		return transmute!S(val);
 	}
 }
-

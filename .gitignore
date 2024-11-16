@@ -8,7 +8,7 @@ libysbase.dylib
 libysbase.dll
 libysbase.a
 libysbase.lib
-libysbase-test-*
+ysbase-test-*
 *.exe
 *.pdb
 *.o

@@ -44,7 +44,8 @@ else
 	// use the general allocator on top of c malloc() by default
 	alias YSBAllocator = YSBGeneralAllocator!Mallocator;
 
-	version (YSBase_NoGlobalAlloc) {}
+	// TODO: this throws a "No GC was initialized" error.
+	/* version (YSBase_NoGlobalAlloc) {}
 	else
 		// `theAllocator` will be created on top of `processAllocator` if it does not exist, when first accessed.
 		// without this set, `processAllocator` would be automatically set to a `GCAllocator` when first accessed.
@@ -52,7 +53,7 @@ else
 		private extern (C) void setGlobalAllocators()
 		{
 			processAllocator = sharedAllocatorObject(YSBAllocator());
-		}
+		} */
 }
 
 // TODO: once I've got a way to forward attributes, redefine make, etc.
