@@ -19,7 +19,7 @@ struct ParametricMallocator(
 
 nothrow @system @nogc shared const pure:
 
-		enum uint alignment = platformAlignment;
+	enum uint alignment = platformAlignment;
 
 	// TODO: forward attributes from mallocF instead of asserting them
 	static void[] allocate(size_t bytes)

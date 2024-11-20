@@ -35,6 +35,10 @@ alias YSBGeneralAllocator(BA) = Segregator!(
 	BA
 );
 
+import std.typecons : Yes;
+
+// TODO: why no work?
+shared CSharedAllocatorImpl!YSBAllocator ysbAllocator;
 
 version (YSBase_GC)
 	// `GCAllocator` must be used as the user has disabled all automatic free() calls in this library
