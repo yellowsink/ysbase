@@ -31,6 +31,28 @@ This aims to make a package I can include as the base for my projects. Hopefully
 
 This list will hopefully grow as I write more small lil utils.
 
+## The forest of `std.experimental.allocator` forks
+
+`std.experimental.allocator` provides an interface for composable allocators of the type described in
+Andrei Alexandrescu's excellent talk,
+[std::allocator is to Allocation what std::vector is to Vexation](https://youtu.be/LIb3L4vKZ7U).
+
+`stdx.allocator` is a subtly different version of this entire module tree broken out to be a sort of "LTS" version,
+so that production ready code like vibe.d can depend on it - the std version being experimental and all.
+
+YSBase can run on either `std` or `stdx` variants of allocator. I suggest you use stdx if you are using vibe.d and std
+otherwise.
+
+I don't really want to spawn another fork of these, but I encountered an issue in that many of the building_blocks do
+not support `shared`. Some, like `Segregator`, handle it perfectly! Others, like `FreeList` do not.
+
+So the `ysbase.allocation` modules not only re-export std/x allocator, but also overrides some allocator types with more
+suitable types e.g. a `ParametricMallocator` template that takes the malloc function as a parameter, and a shared-safe
+`FreeList`.
+
+The plan is eventually to have allocators and utility functions that can automatically forward necessary attributes,
+but doing this with just templates turns out to be a quite difficult problem to solve so that one is WIP.
+
 ## Configurations and Versions
 
 You can choose different behaviour at compile time using dub.json/dub.sdl:

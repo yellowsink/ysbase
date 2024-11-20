@@ -3,10 +3,7 @@ module ysbase.allocation;
 /* version (YSBase_GC) {}
 else version = YSBase_Manual_Free; */
 
-version (YSBase_StdxAlloc)
-	public import stdx.allocator;
-else
-	public import std.experimental.allocator;
+public import ysbase.allocation.source_reexport;
 
 public import ysbase.allocation.building_blocks;
 
@@ -17,6 +14,8 @@ import std.algorithm : max;
 // should be pretty good for general purpose application use
 alias YSBGeneralAllocator(BA) = Segregator!(
 	// small size extents, kept forever and reused.
+	// TODO: freelist forces this to not be `shared`
+	// (segregator supports shared if all allocators in it are shared)
 	8, FreeList!(BA, 0, 8),
 	128, Bucketizer!(FreeList!(BA, 0, unbounded), 1, 128, 16),
 	256, Bucketizer!(FreeList!(BA, 0, unbounded), 129, 256, 32),
@@ -35,10 +34,6 @@ alias YSBGeneralAllocator(BA) = Segregator!(
 	BA
 );
 
-import std.typecons : Yes;
-
-// TODO: why no work?
-shared CSharedAllocatorImpl!YSBAllocator ysbAllocator;
 
 version (YSBase_GC)
 	// `GCAllocator` must be used as the user has disabled all automatic free() calls in this library
@@ -55,9 +50,48 @@ else
 			// this will run in newly created threads as well.
 			// this also gives each thread its own memory which makes
 			// deallocating it from the wrong thread *spicy*
-			// TODO: make YSBGeneralAllocator shared-safe
+
+			// TODO: implement shared FreeList, Bucketizer, AllocatorList, Region such that YSBAllocator may be shared.
+			// this will allow us to deallocate memory allocated by other threads' theAllocator.
+			//shared YSBAllocator alloc;
+			//processAllocator = sharedAllocatorObject(alloc); // must pass by ref
 			theAllocator = allocatorObject(YSBAllocator());
 		}
 }
 
 // TODO: once I've got a way to forward attributes, redefine make, etc.
+
+unittest
+{
+	import std.experimental.allocator : theAllocator;
+	import core.memory : GC;
+	import std.stdio;
+
+	YSBGeneralAllocator!GCAllocator gca;
+
+	// allocate a bunch of stuff
+	writeln("           (used, freed, N/A)");
+	writeln("baseline:   ", GC.stats);
+
+	auto arr1 = gca.makeArray!int(500);
+
+	GC.collect();
+	writeln("alloc 2k:   ", GC.stats);
+
+	gca.dispose(arr1);
+
+	GC.collect();
+	writeln("dealloc 2k: ", GC.stats);
+
+	auto arr2 = gca.makeArray!int(250);
+	GC.collect();
+	writeln("alloc 1k:   ", GC.stats);
+
+	auto arr3 = gca.makeArray!int(250);
+	GC.collect();
+	writeln("alloc 1k:   ", GC.stats);
+
+	auto arr4 = gca.makeArray!int(500);
+	GC.collect();
+	writeln("alloc 2k:   ", GC.stats);
+}

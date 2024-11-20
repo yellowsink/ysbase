@@ -1,9 +1,6 @@
-module ysbase.allocation.building_blocks;
+module ysbase.allocation.building_blocks.parametric_mallocator;
 
-version (YSBase_StdxAlloc)
-	public import stdx.allocator.building_blocks;
-else
-	public import std.experimental.allocator.building_blocks;
+import ysbase.allocation : platformAlignment;
 
 // like Mallocator but takes any malloc, free, realloc you want.
 struct ParametricMallocator(
@@ -12,14 +9,9 @@ struct ParametricMallocator(
 	alias reallocF
 )
 {
-	version (YSBase_StdxAlloc)
-		import stdx.allocator.common : platformAlignment;
-	else
-		import std.experimental.allocator.common : platformAlignment;
-
 nothrow @system @nogc shared const pure:
 
-	enum uint alignment = platformAlignment;
+		enum uint alignment = platformAlignment;
 
 	// TODO: forward attributes from mallocF instead of asserting them
 	static void[] allocate(size_t bytes)
@@ -69,6 +61,4 @@ nothrow @system @nogc shared const pure:
 	static ParametricMallocator!(mallocF, freeF, reallocF) instance;
 }
 
-import core.memory : pureFree, pureMalloc, pureRealloc;
 
-alias Mallocator = ParametricMallocator!(pureMalloc, pureFree, pureRealloc);
