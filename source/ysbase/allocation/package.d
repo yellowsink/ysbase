@@ -7,6 +7,8 @@ public import ysbase.allocation.source_reexport;
 
 public import ysbase.allocation.building_blocks;
 
+import ysbase.allocation.building_blocks.shared_bucketizer;
+
 import std.algorithm : max;
 
 // based on jemalloc
@@ -16,13 +18,13 @@ alias YSBGeneralAllocator(BA) = Segregator!(
 	// small size extents, kept forever and reused.
 	// TODO: freelist forces this to not be `shared`
 	// (segregator supports shared if all allocators in it are shared)
-	8, FreeList!(BA, 0, 8),
-	128, Bucketizer!(FreeList!(BA, 0, unbounded), 1, 128, 16),
-	256, Bucketizer!(FreeList!(BA, 0, unbounded), 129, 256, 32),
-	512, Bucketizer!(FreeList!(BA, 0, unbounded), 257, 512, 64),
-	1024, Bucketizer!(FreeList!(BA, 0, unbounded), 513, 1024, 128),
-	2048, Bucketizer!(FreeList!(BA, 0, unbounded), 1025, 2048, 256),
-	3584, Bucketizer!(FreeList!(BA, 0, unbounded), 2049, 3584, 512),
+	/* 8, SharedFreeList!(BA, 0, 8),
+	128, SharedBucketizer!(SharedFreeList!(BA, 0, unbounded), 1, 128, 16),
+	256, SharedBucketizer!(SharedFreeList!(BA, 0, unbounded), 129, 256, 32),
+	512, SharedBucketizer!(SharedFreeList!(BA, 0, unbounded), 257, 512, 64),
+	1024, SharedBucketizer!(SharedFreeList!(BA, 0, unbounded), 513, 1024, 128),
+	2048, SharedBucketizer!(SharedFreeList!(BA, 0, unbounded), 1025, 2048, 256),
+	3584, SharedBucketizer!(SharedFreeList!(BA, 0, unbounded), 2049, 3584, 512), */
 	/*
 		medium sizes (3.6K~4072Ki), just serve each alloc with its own region, rounded up to 4MB for efficiency.
 		note that allocatorlist will free regions if at least two of them are empty
