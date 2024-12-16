@@ -9,6 +9,7 @@ libysbase.dll
 libysbase.a
 libysbase.lib
 ysbase-test-*
+testscript
 *.exe
 *.pdb
 *.o

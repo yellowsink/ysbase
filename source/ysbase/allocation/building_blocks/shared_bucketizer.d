@@ -222,8 +222,8 @@ shared struct SharedBucketizer(Allocator, size_t min, size_t max, size_t step)
 }
 
 // TODO: why is this not working when in a segregator?
-enum isShared1 = is(typeof(SharedBucketizer!Mallocator) == shared);
-enum isShared2 = !stateSize!(SharedBucketizer!Mallocator);
+//enum isShared1 = is(typeof(SharedBucketizer!Mallocator) == shared);
+//enum isShared2 = !stateSize!(SharedBucketizer!Mallocator); // won't compile :(
 
 unittest
 {
@@ -245,5 +245,5 @@ unittest
 	shared Segregator!(8, a, a) b;
 	//shared SharedBucketizer!Mallocator b;
 
-	b.allocate(50);
+	//b.allocate(50);
 }

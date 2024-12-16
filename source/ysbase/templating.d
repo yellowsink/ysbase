@@ -1,6 +1,7 @@
 module ysbase.templating;
 
-// NOTE: this module is very work in progress rn and is working up to getting ForwardAttrs working.
+// these were originally written to try and make a template infer attributes, but as it turns out that's done anyway
+// for template functions and auto functions, so this is unnecessary. The utilities can remain anyway :)
 
 // beware: insanity lies ahead, but the best kind of insanity :)
 
@@ -55,27 +56,3 @@ alias zipMap(alias fn, A...) = mapN!(2, fn, interleave!A);
 
 private enum _test_concat(alias a, alias b) = a ~ "-" ~ b;
 static assert(zipMap!(_test_concat, "A", "B", "C", "D", "E", "F") == AliasSeq!("A-D", "B-E", "C-F"));
-
-/**  */
-mixin template ForwardAttrs(string name, alias source, alias func)
-{
-	enum funcText = fullyQualifiedName!(ReturnType!func) ~ " " ~ name ~ "("
-		~ concat!(", ", zipMap!((a, b) => a ~ b, Parameters!func, ParameterIdentifierTuple!func));
-}
-
-
-void test(ref int x, string y) @nogc nothrow @live
-{
-
-}
-
-//mixin ForwardAttrs!("test2", test, {});
-
-/* pragma(msg, Parameters!test);
-pragma(msg, ParameterIdentifierTuple!test);
-
-
-private enum _concat_types_strings(A, string b) = fullyQualifiedName!A ~ " " ~ b;
-pragma(msg, zipMap!(_concat_types_strings, Parameters!test, ParameterIdentifierTuple!test)); */
-
-// TODO: templates are insane
