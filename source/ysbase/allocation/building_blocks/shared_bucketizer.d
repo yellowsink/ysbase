@@ -245,5 +245,5 @@ unittest
 	shared Segregator!(8, a, a) b;
 	//shared SharedBucketizer!Mallocator b;
 
-	//b.allocate(50);
+	b.allocate(50);
 }

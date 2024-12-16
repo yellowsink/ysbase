@@ -18,13 +18,13 @@ alias YSBGeneralAllocator(BA) = Segregator!(
 	// small size extents, kept forever and reused.
 	// TODO: freelist forces this to not be `shared`
 	// (segregator supports shared if all allocators in it are shared)
-	/* 8, SharedFreeList!(BA, 0, 8),
-	128, SharedBucketizer!(SharedFreeList!(BA, 0, unbounded), 1, 128, 16),
-	256, SharedBucketizer!(SharedFreeList!(BA, 0, unbounded), 129, 256, 32),
-	512, SharedBucketizer!(SharedFreeList!(BA, 0, unbounded), 257, 512, 64),
-	1024, SharedBucketizer!(SharedFreeList!(BA, 0, unbounded), 513, 1024, 128),
-	2048, SharedBucketizer!(SharedFreeList!(BA, 0, unbounded), 1025, 2048, 256),
-	3584, SharedBucketizer!(SharedFreeList!(BA, 0, unbounded), 2049, 3584, 512), */
+	8, /* Shared */FreeList!(BA, 0, 8),
+	128, /* Shared */Bucketizer!(/* Shared */FreeList!(BA, 0, unbounded), 1, 128, 16),
+	256, /* Shared */Bucketizer!(/* Shared */FreeList!(BA, 0, unbounded), 129, 256, 32),
+	512, /* Shared */Bucketizer!(/* Shared */FreeList!(BA, 0, unbounded), 257, 512, 64),
+	1024, /* Shared */Bucketizer!(/* Shared */FreeList!(BA, 0, unbounded), 513, 1024, 128),
+	2048, /* Shared */Bucketizer!(/* Shared */FreeList!(BA, 0, unbounded), 1025, 2048, 256),
+	3584, /* Shared */Bucketizer!(/* Shared */FreeList!(BA, 0, unbounded), 2049, 3584, 512),
 	/*
 		medium sizes (3.6K~4072Ki), just serve each alloc with its own region, rounded up to 4MB for efficiency.
 		note that allocatorlist will free regions if at least two of them are empty
@@ -61,8 +61,6 @@ else
 		}
 }
 
-// TODO: once I've got a way to forward attributes, redefine make, etc.
-
 unittest
 {
 	import std.experimental.allocator : theAllocator;
@@ -97,3 +95,22 @@ unittest
 	GC.collect();
 	writeln("alloc 2k:   ", GC.stats);
 }
+
+private import std.traits : isSafe;
+
+private enum isUnsafe(alias F) = !isSafe!F;
+
+// allocate() is safe
+static assert(isSafe!({ Mallocator.instance.make!int; }));
+
+static assert(isSafe!({ Mallocator.instance.makeArray!int(5); }));
+
+static assert(isSafe!({ Mallocator.instance.makeMultidimensionalArray!int(5, 5, 6, 8); }));
+
+// reallocate() isn't safe
+static assert(isUnsafe!({ int[] arr; Mallocator.instance.expandArray(arr, 5); }));
+
+static assert(isUnsafe!({ int[] arr; Mallocator.instance.shrinkArray(arr, 5); }));
+
+// destroying objects isn't safe.
+static assert(isUnsafe!({ int* x; Mallocator.instance.dispose(x); }));

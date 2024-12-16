@@ -13,9 +13,10 @@ shared const:
 
 	enum uint alignment = platformAlignment;
 
-	// function templates infer: pure; nothrow; @safe; @nogc; return ref; scope; return scope; ref return scope.
+	// can't be templates as it breaks the common `forwardToMember` implementation
+	// auto functions infer: pure; nothrow; @safe; @nogc; return ref; scope; return scope; ref return scope.
 	// https://dlang.org/spec/function.html#function-attribute-inference
-	static void[] allocate()(size_t bytes)
+	static auto /* void[] */ allocate(size_t bytes)
 	{
 		if (!bytes)
 			return null;
@@ -23,7 +24,7 @@ shared const:
 		return p ? (() @trusted => p[0 .. bytes])() : null;
 	}
 
-	static void[] allocateZeroed()(size_t bytes)
+	static auto /* void[] */ allocateZeroed(size_t bytes)
 	{
 		if (!bytes)
 			return null;
@@ -35,13 +36,13 @@ shared const:
 		return p;
 	}
 
-	static bool deallocate()(void[] b)
+	static auto /* bool */ deallocate(void[] b)
 	{
 		freeF((() @trusted => b.ptr)());
 		return true;
 	}
 
-	static bool reallocate()(ref void[] b, size_t s)
+	static auto /* bool */ reallocate(ref void[] b, size_t s)
 	{
 		if (!s)
 		{
