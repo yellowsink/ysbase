@@ -9,25 +9,26 @@ This aims to make a package I can include as the base for my projects. Hopefully
 
  - memory allocation tools
    * [x] can work with std.experimental.allocator, stdx.allocator
-   * [ ] automatically supports `@nogc` as long as your allocator does
+   * [x] automatically supports `@nogc` as long as your allocator does
    * [x] can be configured to just use the garbage collector (sets the default allocator to `GCAllocator` and disables freeing)
    * [x] fast general purpose default allocator
    * [x] version of `Mallocator` that takes the functions it calls as template args.
-   * [ ] smart pointers and collectinos
+   * [ ] shared allocator building blocks
+   * [ ] shared global allocator by default
+   * [ ] smart pointers and collections
      - [ ] smart pointers
      - [ ] vectors
      - [ ] strings
-     - inspired by the API of [BTL](https://submada.github.io/btl/) but using a completely original implementation.
-     - with practical considerations inspired by my time writing embedded software in D
+     - Inspired by the API of [BTL](https://submada.github.io/btl/) but using a completely original implementation.
+     - With practical considerations inspired by my time writing embedded software in D
 
- - magic bullshittery utilities,
+ - Magic bullshittery utilities,
    sourced from both general projects of mine and especially from
    [3dskit](https://github.com/ys-3dskit/3dskit-dlang/tree/7268815/ys3ds)
    * [x] `transmute!`, the equivalent of rust's `std::mem::transmute` or C++'s `std::bit_cast`.
-   * [ ] `string` <-> `String` <-> `char*` conversion tools
+   * [ ] `string` ⇋ `String` ⇋ `char*` conversion tools
 
  - template stuff
-   * [ ] nice ways to forward attributes and visibility
 
 This list will hopefully grow as I write more small lil utils.
 
@@ -50,8 +51,9 @@ So the `ysbase.allocation` modules not only re-export std/x allocator, but also 
 suitable types e.g. a `ParametricMallocator` template that takes the malloc function as a parameter, and a shared-safe
 `FreeList`.
 
-The plan is eventually to have allocators and utility functions that can automatically forward necessary attributes,
-but doing this with just templates turns out to be a quite difficult problem to solve so that one is WIP.
+The plan is eventually to have all building blocks make themselves shared automatically eventually.
+The default implementations support this exclusively for stateless allocators, but it should be totally possible to have
+shared stateful allocators too (though there are potential performance drawbacks to be aware of!).
 
 ## Configurations and Versions
 
