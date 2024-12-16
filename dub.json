@@ -1,17 +1,32 @@
 {
-	"authors": ["Hazel Atkinson"],
-	"copyright": "Copyright © 2024, Hazel Atkinson",
-	"description": "Hazel's base utilities for D programming",
-	"license": "public domain",
-	"name": "ysbase",
+	"-ddoxTool": "docgen",
+	"authors": [
+		"Hazel Atkinson"
+	],
 	"configurations": [
 		{
-			"name": "library"
+			"name": "library",
+			"targetType": "library"
 		},
 		{
+			"dependencies": {
+				"stdx-allocator": ">=2.0.0"
+			},
 			"name": "stdxalloc",
-			"dependencies": { "stdx-allocator": ">=2.0.0" },
-			"versions": ["YSBase_StdxAlloc"]
+			"targetType": "library",
+			"versions": [
+				"YSBase_StdxAlloc"
+			]
 		}
-	]
+	],
+	"copyright": "Copyright © 2024, Hazel Atkinson",
+	"dependencies": {
+		"ddox": "~>0.16.23",
+		"docgen": {
+			"path": "./docgen"
+		}
+	},
+	"description": "Hazel's base utilities for D programming",
+	"license": "public domain",
+	"name": "ysbase"
 }

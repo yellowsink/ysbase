@@ -1,0 +1,3 @@
+SRCL = $(B Source Code:) $(LINK2 https://github.com/yellowsink/ysbase/blob/main/source/$0, $0)
+
+SRCLL = $(B Source Code:) $(LINK2 https://github.com/yellowsink/ysbase/blob/main/source/$1#L$2, $1) (Line $2)

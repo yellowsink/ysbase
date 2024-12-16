@@ -1,3 +1,25 @@
+/++
+This module contains composable building blocks and utilities for memory allocation.
+
+It re-exports all members of `std.experimental.allocator` or `stdx.allocator`, and the `.building_blocks` package.
+It also contains YSBase's own allocation tools, such the `YSBGeneralAllocator` allocator, the `YSBAllocator` alias,
+and the static constructor that sets the global `theAllocator` and `processAllocator` to `YSBAllocator`.
+
+It also contains some additional building blocks, notably shared version of the standard building blocks.
+The standard library's building blocks only allow themselves to be `shared` when they are stateless, whereas these ones
+will allow the inner state to be `shared`.
+
+When `version (YSBase_GC)` is defined, `YSBAllocator` will be `GCAllocator`.
+
+All allocators and allocation functions (`make` etc.) are `@safe`, `nothrow`, `pure`, etc. if and only
+if the template arguments they have been given allow them to be so.
+
+$(SRCL ysbase/allocation/package.d)
+
+Copyright: Public Domain
+Authors: Hazel Atkinson
+License: $(LINK2 https://unlicense.org, Unlicense)
++/
 module ysbase.allocation;
 
 /* version (YSBase_GC) {}
@@ -11,6 +33,20 @@ import ysbase.allocation.building_blocks.shared_bucketizer;
 
 import std.algorithm : max;
 
+version (D_Ddoc)
+	mixin template EncapsulatedMallocator() { Mallocator alloc; alias alloc this; }
+
+/**
+* A general purpose allocator designed for general-purpose use.
+* It is modelled after jemalloc.
+* It is `shared`-safe (if desired), so you may pass memory to another thread and `deallocate` it there.
+*
+* Params:
+* 	BA = The $(U b)acking $(U a)llocator to obtain memory from.
+*/
+version (D_Ddoc)
+	struct YSBGeneralAllocator(BA) { mixin EncapsulatedMallocator; }
+else
 // based on jemalloc
 // https://jemalloc.net/jemalloc.3.html#size_classes
 // should be pretty good for general purpose application use
@@ -42,8 +78,12 @@ version (YSBase_GC)
 	alias YSBAllocator = GCAllocator;
 else
 {
-	// use the general allocator on top of c malloc() by default
-	alias YSBAllocator = YSBGeneralAllocator!Mallocator;
+	/// The default allocator used internally $(I by default) by YSBase, and is automatically assigned to `theAllocator`.
+	version (D_Ddoc)
+		struct YSBAllocator { mixin EncapsulatedMallocator; }
+	else
+		// use the general allocator on top of c malloc() by default
+		alias YSBAllocator = YSBGeneralAllocator!Mallocator;
 
 	version (YSBase_NoGlobalAlloc) {}
 	else

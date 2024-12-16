@@ -1,0 +1,7 @@
+{
+	"dependencies": {
+		"ddox": "~>0.16.23"
+	},
+	"name": "docgen",
+	"targetType": "executable"
+}

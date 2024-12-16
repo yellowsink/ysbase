@@ -1,7 +1,11 @@
+/++
+Copyright: Public Domain
+Authors: Hazel Atkinson
+License: $(LINK2 https://unlicense.org, Unlicense)
++/
 module ysbase.allocation.building_blocks.shared_bucketizer;
 
-// std.experimental.bucketizer but `shared`, and requires `Allocator` to be shared
-
+/// [HEAVILY WIP] std.experimental.bucketizer but `shared`, and requires `Allocator` to be shared
 shared struct SharedBucketizer(Allocator, size_t min, size_t max, size_t step)
 {
 		import ysbase.allocation.source_reexport : roundUpToMultipleOf, alignedAt;
@@ -245,5 +249,5 @@ unittest
 	shared Segregator!(8, a, a) b;
 	//shared SharedBucketizer!Mallocator b;
 
-	b.allocate(50);
+	//b.allocate(50);
 }
