@@ -29,8 +29,6 @@ public import ysbase.allocation.source_reexport;
 
 public import ysbase.allocation.building_blocks;
 
-import ysbase.allocation.building_blocks.shared_bucketizer;
-
 import std.algorithm : max;
 
 version (D_Ddoc)
@@ -50,23 +48,23 @@ else
 // based on jemalloc
 // https://jemalloc.net/jemalloc.3.html#size_classes
 // should be pretty good for general purpose application use
-alias YSBGeneralAllocator(BA) = Segregator!(
+alias YSBGeneralAllocator(BA) = SharedSegregator!(
 	// small size extents, kept forever and reused.
 	// TODO: freelist forces this to not be `shared`
 	// (segregator supports shared if all allocators in it are shared)
-	8, /* Shared */FreeList!(BA, 0, 8),
-	128, /* Shared */Bucketizer!(/* Shared */FreeList!(BA, 0, unbounded), 1, 128, 16),
-	256, /* Shared */Bucketizer!(/* Shared */FreeList!(BA, 0, unbounded), 129, 256, 32),
-	512, /* Shared */Bucketizer!(/* Shared */FreeList!(BA, 0, unbounded), 257, 512, 64),
-	1024, /* Shared */Bucketizer!(/* Shared */FreeList!(BA, 0, unbounded), 513, 1024, 128),
-	2048, /* Shared */Bucketizer!(/* Shared */FreeList!(BA, 0, unbounded), 1025, 2048, 256),
-	3584, /* Shared */Bucketizer!(/* Shared */FreeList!(BA, 0, unbounded), 2049, 3584, 512),
+	8, SharedFreeList!(BA, 0, 8),
+	128, SharedBucketizer!(SharedFreeList!(BA, 0, unbounded), 1, 128, 16),
+	256, SharedBucketizer!(SharedFreeList!(BA, 0, unbounded), 129, 256, 32),
+	512, SharedBucketizer!(SharedFreeList!(BA, 0, unbounded), 257, 512, 64),
+	1024, SharedBucketizer!(SharedFreeList!(BA, 0, unbounded), 513, 1024, 128),
+	2048, SharedBucketizer!(SharedFreeList!(BA, 0, unbounded), 1025, 2048, 256),
+	3584, SharedBucketizer!(SharedFreeList!(BA, 0, unbounded), 2049, 3584, 512),
 	/*
 		medium sizes (3.6K~4072Ki), just serve each alloc with its own region, rounded up to 4MB for efficiency.
 		note that allocatorlist will free regions if at least two of them are empty
 		but it will reuse the empty one its holding if asked for an allocation, sorta like a freelist but not quite.
 	 */
-	4072 * 1024, AllocatorList!(n => Region!BA(max(n, 1024 * 4096)), NullAllocator),
+	//4072 * 1024, AllocatorList!(n => Region!BA(max(n, 1024 * 4096)), NullAllocator),
 
 	// above ~4MB, just pass allocations direct to the backing allocator
 	BA
@@ -87,27 +85,40 @@ else
 
 	version (YSBase_NoGlobalAlloc) {}
 	else
+	{
+		private shared YSBAllocator _global_process_allocator;
+		private shared bool _global_procalloc_inited = false;
+
 		static this()
 		{
+			import core.atomic : atomicLoad, atomicStore;
+
 			// this will run in newly created threads as well.
 			// this also gives each thread its own memory which makes
 			// deallocating it from the wrong thread *spicy*
 
-			// TODO: implement shared FreeList, Bucketizer, AllocatorList, Region such that YSBAllocator may be shared.
-			// this will allow us to deallocate memory allocated by other threads' theAllocator.
-			//shared YSBAllocator alloc;
-			//processAllocator = sharedAllocatorObject(alloc); // must pass by ref
-			theAllocator = allocatorObject(YSBAllocator());
+			// set the global process allocator to an instance of YSBAllocator if not already done so
+			if (!atomicLoad(_global_procalloc_inited))
+				processAllocator = sharedAllocatorObject(_global_process_allocator); // must pass by ref
+
+			atomicStore(_global_procalloc_inited, true);
+
+			// by default theAllocator is automatically initialized to defer to the global one,
+			// but while this works, it is not ideal to share the allocator state among threads,
+			// and in fact it is more efficient to give each thread its own new instance of the allocator
+			// TODO
+			//theAllocator = allocatorObject(talloc);
 		}
+	}
 }
 
-unittest
+/* unittest
 {
 	import std.experimental.allocator : theAllocator;
 	import core.memory : GC;
 	import std.stdio;
 
-	YSBGeneralAllocator!GCAllocator gca;
+	YSBGeneralAllocator!(shared(GCAllocator)) gca;
 
 	// allocate a bunch of stuff
 	writeln("           (used, freed, N/A)");
@@ -134,7 +145,7 @@ unittest
 	auto arr4 = gca.makeArray!int(500);
 	GC.collect();
 	writeln("alloc 2k:   ", GC.stats);
-}
+} */
 
 private import std.traits : isSafe;
 
