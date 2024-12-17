@@ -142,4 +142,7 @@ shared const:
 	static ParametricMallocator!(mallocF, freeF, reallocF) instance;
 }
 
+private import core.memory : pureFree, pureMalloc, pureRealloc;
 
+/// Re-implementation of `Mallocator` using `ParametricMallocator`.
+alias Mallocator = ParametricMallocator!(pureMalloc, pureFree, pureRealloc);

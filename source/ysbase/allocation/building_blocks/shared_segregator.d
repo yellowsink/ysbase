@@ -7,7 +7,15 @@ module ysbase.allocation.building_blocks.shared_segregator;
 
 private import ysbase.allocation : stateSize, goodAllocSize, reallocate;
 
-///
+/++
+A version of Phobos' `Segregator` but `shared`, and requires the allocators to be shared.
+Dispatches allocations to either `SmallAllocator` or `LargeAllocator` depending on if they are `<= threshold` or `>`.
+
+$(SRCL ysbase/allocation/building_blocks/shared_segregator.d)
+
+See_Also:
+$(LINK2 https://dlang.org/phobos/std_experimental_allocator_building_blocks_segregator.html, Phobos' `Segregator`)
++/
 shared struct SharedSegregator(size_t threshold, SmallAllocator, LargeAllocator)
 {
 	import std.algorithm : min;
@@ -306,6 +314,8 @@ directed to `A2`; requests between $(D n2 + 1) and `n3` bytes (inclusive)
 are directed to `A3`; and requests for more than `n3` bytes are directed
 to `A4`. If some particular range should not be handled, `NullAllocator`
 may be used appropriately.
+
+$(SRCLL ysbase/allocation/building_blocks/shared_segregator.d, 319)
 
 */
 template SharedSegregator(Args...) if (Args.length > 3)

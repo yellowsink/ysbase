@@ -9,10 +9,26 @@ It also contains some additional building blocks, notably shared version of the 
 The standard library's building blocks only allow themselves to be `shared` when they are stateless, whereas these ones
 will allow the inner state to be `shared`.
 
-When `version (YSBase_GC)` is defined, `YSBAllocator` will be `GCAllocator`.
+When `version (YSBase_GC)` is defined, `YSBAllocator` will be `GCAllocator`, else it is a
+$(D YSBGeneralAllocator!Mallocator).
 
 All allocators and allocation functions (`make` etc.) are `@safe`, `nothrow`, `pure`, etc. if and only
 if the template arguments they have been given allow them to be so.
+
+<h2>New Building Blocks:</h2>
+$(UL
+	$(LI $(LINK2 allocation/building_blocks/parametric_mallocator.html, $(D ParametricMallocator) (and $(D Mallocator))))
+	$(LI $(LINK2 allocation/building_blocks/shared_bucketizer/SharedBucketizer.html, $(D SharedBucketizer)))
+	$(LI $(LINK2 allocation/building_blocks/shared_segregator/SharedSegregator.html, $(D SharedSegregator)))
+)
+
+<h2>Other Re-Exports:</h2>
+$(UL
+	$(LI $(LINK2 https://dlang.org/phobos/std_experimental_allocator.html, $(D std.experimental.allocator)))
+	$(LI $(LINK2 https://dlang.org/phobos/std_experimental_allocator_building_blocks.html, $(D std.experimental.allocator.building_blocks)))
+)
+
+(or `stdx.allocator` equivalents).
 
 $(SRCL ysbase/allocation/package.d)
 
@@ -32,12 +48,22 @@ public import ysbase.allocation.building_blocks;
 import std.algorithm : max;
 
 version (D_Ddoc)
-	mixin template EncapsulatedMallocator() { Mallocator alloc; alias alloc this; }
+	mixin template EncapsulatedMallocator() {
+		Mallocator alloc;
+		// sigh.
+		enum alignment = Mallocator.alignment;
+		auto allocate(size_t s) => alloc.allocate(s);
+		auto allocateZeroed(size_t s) => alloc.allocateZeroed(s);
+		auto deallocate(void[] p) => alloc.deallocate(p);
+		auto reallocate(ref void[] p, size_t s) => alloc.reallocate(p, s);
+	}
 
 /**
 * A general purpose allocator designed for general-purpose use.
 * It is modelled after jemalloc.
 * It is `shared`-safe (if desired), so you may pass memory to another thread and `deallocate` it there.
+*
+* $(SRCLL ysbase/allocation/package.d, 77)
 *
 * Params:
 * 	BA = The $(U b)acking $(U a)llocator to obtain memory from.
@@ -76,9 +102,9 @@ version (YSBase_GC)
 	alias YSBAllocator = GCAllocator;
 else
 {
-	/// The default allocator used internally $(I by default) by YSBase, and is automatically assigned to `theAllocator`.
+	/// The allocator used internally $(I by default) by YSBase, automatically assigned to `processAllocator`.
 	version (D_Ddoc)
-		struct YSBAllocator { mixin EncapsulatedMallocator; }
+		shared struct YSBAllocator { mixin EncapsulatedMallocator; }
 	else
 		// use the general allocator on top of c malloc() by default
 		alias YSBAllocator = YSBGeneralAllocator!Mallocator;
