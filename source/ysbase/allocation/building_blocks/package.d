@@ -10,3 +10,4 @@ import ysbase.allocation.building_blocks.shared_bucketizer : SharedBucketizer;
 
 import ysbase.allocation.building_blocks.shared_segregator : SharedSegregator;
 
+import ysbase.allocation.building_blocks.shared_region : SharedRegion, SharedBorrowedRegion, SharedInSituRegion;

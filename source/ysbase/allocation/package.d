@@ -20,6 +20,7 @@ $(UL
 	$(LI $(LINK2 allocation/building_blocks/parametric_mallocator.html, $(D ParametricMallocator) (and $(D Mallocator))))
 	$(LI $(LINK2 allocation/building_blocks/shared_bucketizer/SharedBucketizer.html, $(D SharedBucketizer)))
 	$(LI $(LINK2 allocation/building_blocks/shared_segregator/SharedSegregator.html, $(D SharedSegregator)))
+	$(LI $(LINK2 allocation/building_blocks/shared_region.html, $(D SharedRegion), $(D SharedBorrowedRegion), $(D SharedInSituRegion)))
 )
 
 <h2>Other Re-Exports:</h2>
@@ -63,7 +64,7 @@ version (D_Ddoc)
 * It is modelled after jemalloc.
 * It is `shared`-safe (if desired), so you may pass memory to another thread and `deallocate` it there.
 *
-* $(SRCLL ysbase/allocation/package.d, 77)
+* $(SRCLL ysbase/allocation/package.d, 78)
 *
 * Params:
 * 	BA = The $(U b)acking $(U a)llocator to obtain memory from.
