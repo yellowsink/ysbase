@@ -77,8 +77,6 @@ else
 // should be pretty good for general purpose application use
 alias YSBGeneralAllocator(BA) = SharedSegregator!(
 	// small size extents, kept forever and reused.
-	// TODO: freelist forces this to not be `shared`
-	// (segregator supports shared if all allocators in it are shared)
 	8, SharedFreeList!(BA, 0, 8),
 	128, SharedBucketizer!(SharedFreeList!(BA, 0, unbounded), 1, 128, 16),
 	256, SharedBucketizer!(SharedFreeList!(BA, 0, unbounded), 129, 256, 32),
@@ -91,6 +89,7 @@ alias YSBGeneralAllocator(BA) = SharedSegregator!(
 		note that allocatorlist will free regions if at least two of them are empty
 		but it will reuse the empty one its holding if asked for an allocation, sorta like a freelist but not quite.
 	 */
+	// temporarily disabled while i get a shared allocator list working
 	//4072 * 1024, AllocatorList!(n => Region!BA(max(n, 1024 * 4096)), NullAllocator),
 
 	// above ~4MB, just pass allocations direct to the backing allocator

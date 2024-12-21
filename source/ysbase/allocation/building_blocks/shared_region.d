@@ -385,12 +385,12 @@ shared struct SharedBorrowedRegion(uint minAlign = platformAlignment,
 		}
 		else
 		{
-			// bump the pointer so the start is aligned
 			auto savedCurrent = _current.atomicLoad;
 
 			// CAS loop
 			for (;;)
 			{
+				// bump the pointer so the start is aligned
 				auto alignedOldCurrent = savedCurrent.alignUpTo(a);
 				if (alignedOldCurrent < savedCurrent || alignedOldCurrent > _end)
 					return null;
