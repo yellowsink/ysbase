@@ -26,7 +26,12 @@ struct ReferenceWrap(T, bool isSharedSafe = false)
 
 	this(RefT reference)
 	{
-		reference = reference;
+		this.reference = reference;
+	}
+
+	void opAssign(RefT reference)
+	{
+		this.reference = reference;
 	}
 
 	/// The underlying value of the `T`. `ref` if not shared.
