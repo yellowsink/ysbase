@@ -408,4 +408,5 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe, bool isWeak = 
 // TODO: opCmp, opEquals
 // TODO: (maybe) swap, the weird atomic methods that BTl has.
 // TODO: full unit tests
-// TODO: intrusive pointers
+// TODO: intrusive pointers (both with and without weak support)
+// TODO: uniqueptr weak pointers?
