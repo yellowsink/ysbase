@@ -218,26 +218,18 @@ alias WeakPtr(T, bool isUnique = false, bool isSharedSafe = false) = SmartPtrImp
 
 /// Constructs a new object inside a new unique pointer.
 auto makeUnique(T, bool canHaveWeak = false, bool isSharedSafe = false, A...)(A args)
-{
-	return UniquePtr!(T, canHaveWeak, isSharedSafe).make(args);
-}
+	=> UniquePtr!(T, canHaveWeak, isSharedSafe).make(args);
 
 /// ditto
 auto makeUnique(T, bool canHaveWeak = false, Alloc, A...)(ref Alloc allocator, A args)
-{
-	return UniquePtr!(T, canHaveWeak, isSharedAllocator!Alloc).make(allocator, args);
-}
+	=> UniquePtr!(T, canHaveWeak, isSharedAllocator!Alloc).make(allocator, args);
 
 /// Constructs a new object inside a new shared pointer.
 auto makeShared(T, bool canHaveWeak = true, bool isSharedSafe = false, A...)(A args)
-{
-	return SharedPtr!(T, canHaveWeak, isSharedSafe).make(args);
-}
+	=> SharedPtr!(T, canHaveWeak, isSharedSafe).make(args);
 
 /// ditto
 auto makeShared(T, bool canHaveWeak = true, Alloc, A...)(ref Alloc allocator, A args)
-{
-	return SharedPtr!(T, canHaveWeak, isSharedAllocator!Alloc).make(allocator, args);
-}
+	=> SharedPtr!(T, canHaveWeak, isSharedAllocator!Alloc).make(allocator, args);
 
 // TODO: isSharedPtr!T etc.

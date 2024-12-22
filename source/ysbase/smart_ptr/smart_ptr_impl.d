@@ -26,6 +26,8 @@ Params:
 +/
 struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ = false)
 {
+// #region Traits
+
 	static assert(isCtrlBlock!ControlBlock, "ControlBlock must be a control block.");
 
 	version (D_Ddoc)
@@ -82,6 +84,10 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ 
 	else
 		private enum canShareFrom(SP) =
 			isSmartPtr!SP && SP.isManagedObjectShared && SP.isSharedSafe == isSharedSafe && is(ManagedType : SP.T);
+
+// #endregion
+
+// #region State, Constructors, Destructors, and opAssign
 
 	mixin template StateImpl()
 	{
@@ -162,6 +168,10 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ 
 		destructorImpl();
 	}
 
+// #endregion
+
+// #region make()
+
 	/// Constructs a new object inside a new smart pointer.
 	static if (!isWeak)
 	static typeof(this) make(Allocator, Args...)(auto ref Allocator alloc, Args a) if (hasMember!(Allocator, "allocate"))
@@ -192,6 +202,10 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ 
 		else
 			return make(theAllocator, a);
 	}
+
+// #endregion
+
+// #region State Getters
 
 	/// How many strong references there are to the managed object. 0 for null and dangling pointers.
 	/// Not defined for UniquePtr unless it can have weak pointers.
@@ -228,16 +242,14 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ 
 
 	/// If the managed object is now gone. Defined only for `WeakPtr`.
 	static if (isWeak)
-	bool isDangling() @property
-	{
-		return refCountStrong == 0;
-	}
+	bool isDangling() @property => refCountStrong == 0;
 
 	/// If this smart pointer is null. `false` if this is a dangling weak pointer.
-	bool isNullPtr() @property
-	{
-		return _control_block is null;
-	}
+	bool isNullPtr() @property => _control_block is null;
+
+// #endregion
+
+// #region Value Access
 
 	/// Provides the `*` operator. Alias for `value`.
 	template opUnary(string op) if (op == "*")
@@ -270,21 +282,23 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ 
 		return _managed_obj.reference;
 	}
 
+// #endregion
+
+// #region WeakPtr Transforms
+
 	/// Create a weak pointer to the object managed by this smart pointer.
 	static if (canHaveWeakPtr && !isWeak)
-	WeakOfThis weakRef()
-	{
-		return WeakOfThis(this);
-	}
+	WeakOfThis weakRef() => WeakOfThis(this);
 
 	/// Tries to promote a weak pointer back to a shared pointer (cannot promote to a unique pointer).
 	/// Returns an empty shared pointer if this is dangling.
 	/// If your code relies on this, it is probably a serious code smell.
 	static if (isWeak && isManagedObjectShared)
-	StrongOfThis tryPromoteToShared()
-	{
-		return StrongOfThis(this);
-	}
+	StrongOfThis tryPromoteToShared() => StrongOfThis(this);
+
+// #endregion
+
+// #region Internals
 
 	// returns the *new* value
 	static if (isManagedObjectShared || canHaveWeakPtr)
@@ -420,6 +434,8 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ 
 		auto dealloc = _control_block.deallocate;
 		dealloc((cast(void*) _control_block)[0 .. ControlBlock.sizeof]);
 	}
+
+// #endregion
 }
 
 // TODO: opCast
