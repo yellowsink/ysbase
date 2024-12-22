@@ -12,6 +12,11 @@ $(LINK2 smart_ptr/smart_ptr_impl.html, Docs for `SmartPtrImpl` and  `isSmartPtr`
 
 $(LINK2 smart_ptr/reference_wrap/ReferenceWrap.html, Docs for `ReferenceWrap`)
 
+Also of interest is $(LINK2 rc_struct/RcStruct.html, `RcStruct`), which wraps a struct in a `SharedPtr`, and forwards
+all methods and fields, and automatically default-constructs it when relevant, such that you get an object that behaves
+exactly like the original struct, except that you get reference semantics
+- like a class but with deterministic destruction!
+
 $(SRCL ysbase/smart_ptr/package.d)
 
 <h2>Re-Exports:</h2>
