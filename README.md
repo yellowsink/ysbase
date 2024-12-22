@@ -13,10 +13,10 @@ This aims to make a package I can include as the base for my projects. Hopefully
    * [x] can be configured to just use the garbage collector (sets the default allocator to `GCAllocator` and disables freeing)
    * [x] fast general purpose default allocator
    * [x] version of `Mallocator` that takes the functions it calls as template args.
-   * [ ] shared allocator building blocks
-   * [ ] shared global allocator by default
-   * [ ] smart pointers and collections
-     - [ ] smart pointers
+   * [WIP] shared allocator building blocks
+   * [WIP] shared global allocator by default
+   * [WIP] smart pointers and collections
+     - [x] smart pointers
      - [ ] vectors
      - [ ] strings
      - [ ] ref-counted struct wrappers

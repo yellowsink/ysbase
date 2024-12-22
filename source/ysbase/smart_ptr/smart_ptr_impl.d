@@ -8,7 +8,7 @@ module ysbase.smart_ptr.smart_ptr_impl;
 import ysbase.smart_ptr.control_block;
 import ysbase.smart_ptr.reference_wrap;
 
-import std.traits : isInstanceOf, TemplateArgsOf, hasElaborateDestructor, hasMember;
+import std.traits : isInstanceOf, TemplateArgsOf, hasElaborateDestructor, hasMember, isDynamicArray, ForeachType;
 
 /// Is `T` some kind of smart pointer?
 enum isSmartPtr(T) = isInstanceOf!(SmartPtrImpl, T);
@@ -173,7 +173,7 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ 
 // #region make()
 
 	/// Constructs a new object inside a new smart pointer.
-	static if (!isWeak)
+	static if (!isWeak && !isDynamicArray!ManagedType)
 	static typeof(this) make(Allocator, Args...)(auto ref Allocator alloc, Args a) if (hasMember!(Allocator, "allocate"))
 	{
 		import ysbase.allocation : make;
@@ -192,7 +192,7 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ 
 	}
 
 	/// ditto
-	static if (!isWeak)
+	static if (!isWeak && !isDynamicArray!ManagedType)
 	static typeof(this) make(Args...)(Args a)
 	{
 		import ysbase.allocation : theAllocator, processAllocator;
@@ -201,6 +201,37 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ 
 			return make(processAllocator, a);
 		else
 			return make(theAllocator, a);
+	}
+
+	/// ditto
+	static if (!isWeak && isDynamicArray!ManagedType)
+	static typeof(this) make(Allocator, Args...)(auto ref Allocator alloc, size_t len, Args a) if (hasMember!(Allocator, "allocate"))
+	{
+		import ysbase.allocation : make, makeArray;
+
+		typeof(this) newsp;
+
+		newsp._control_block = alloc.make!ControlBlock();
+		newsp._control_block.deallocate = (void[] block) { alloc.deallocate(block); };
+
+		static if (isManagedObjectShared || canHaveWeakPtr)
+			newsp.incr_ref();
+
+		newsp._managed_obj = alloc.makeArray!(ForeachType!ManagedType)(len, a);
+
+		return newsp;
+	}
+
+	/// ditto
+	static if (!isWeak && isDynamicArray!ManagedType)
+	static typeof(this) make(Args...)(size_t len, Args a)
+	{
+		import ysbase.allocation : theAllocator, processAllocator;
+
+		static if (isSharedSafe)
+			return make(processAllocator, len, a);
+		else
+			return make(theAllocator, len, a);
 	}
 
 // #endregion
@@ -439,7 +470,6 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ 
 }
 
 // TODO: opCast
-// TODO: slice support
 // TODO: opCmp, opEquals
 // TODO: (maybe) swap, the weird atomic methods that BTl has.
 // TODO: full unit tests

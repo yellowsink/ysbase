@@ -106,13 +106,15 @@ License: $(LINK2 https://unlicense.org, Unlicense)
 +/
 module ysbase.smart_ptr;
 
-import ysbase.smart_ptr.control_block;
-
 public import ysbase.smart_ptr.smart_ptr_impl : isSmartPtr;
 
-import ysbase.smart_ptr.smart_ptr_impl : SmartPtrImpl;
+import ysbase.smart_ptr.control_block;
+
+import ysbase.smart_ptr.smart_ptr_impl;
 
 import ysbase.allocation : isSharedAllocator;
+
+import std.traits : isDynamicArray;
 
 ///
 unittest
@@ -206,6 +208,17 @@ unittest
 	assert(weak.isDangling);
 }
 
+/// construct a dynamic array
+unittest
+{
+	auto sp1 = makeUnique!(int[])(7, 5);
+	auto sp2 = makeUnique!(int[])(3);
+
+	assert(*sp1 == [5, 5, 5, 5, 5, 5, 5]);
+
+	assert(*sp2 == [0, 0, 0]);
+}
+
 /// A non-shared smart pointer. Holds an object, and destroys and deallocates it when going out of scope.
 alias UniquePtr(T, bool canHaveWeak = false, bool isSharedSafe = false) = SmartPtrImpl!(ControlBlock!(false, canHaveWeak), T, isSharedSafe);
 
@@ -217,19 +230,33 @@ alias WeakPtr(T, bool isUnique = false, bool isSharedSafe = false) = SmartPtrImp
 
 
 /// Constructs a new object inside a new unique pointer.
-auto makeUnique(T, bool canHaveWeak = false, bool isSharedSafe = false, A...)(A args)
+auto makeUnique(T, bool canHaveWeak = false, bool isSharedSafe = false, A...)(A args) if (!isDynamicArray!T)
 	=> UniquePtr!(T, canHaveWeak, isSharedSafe).make(args);
 
 /// ditto
-auto makeUnique(T, bool canHaveWeak = false, Alloc, A...)(ref Alloc allocator, A args)
+auto makeUnique(T, bool canHaveWeak = false, bool isSharedSafe = false, A...)(size_t len, A args) if (isDynamicArray!T)
+	=> UniquePtr!(T, canHaveWeak, isSharedSafe).make(len, args);
+
+/// ditto
+auto makeUnique(T, bool canHaveWeak = false, Alloc, A...)(ref Alloc allocator, A args) if (!isDynamicArray!T)
 	=> UniquePtr!(T, canHaveWeak, isSharedAllocator!Alloc).make(allocator, args);
 
+/// ditto
+auto makeUnique(T, bool canHaveWeak = false, Alloc, A...)(ref Alloc allocator, size_t len, A args) if (isDynamicArray!T)
+	=> UniquePtr!(T, canHaveWeak, isSharedAllocator!Alloc).make(allocator, len, args);
+
 /// Constructs a new object inside a new shared pointer.
-auto makeShared(T, bool canHaveWeak = true, bool isSharedSafe = false, A...)(A args)
+auto makeShared(T, bool canHaveWeak = true, bool isSharedSafe = false, A...)(A args) if (!isDynamicArray!T)
 	=> SharedPtr!(T, canHaveWeak, isSharedSafe).make(args);
 
 /// ditto
-auto makeShared(T, bool canHaveWeak = true, Alloc, A...)(ref Alloc allocator, A args)
+auto makeShared(T, bool canHaveWeak = true, bool isSharedSafe = false, A...)(size_t len, A args) if (isDynamicArray!T)
+	=> SharedPtr!(T, canHaveWeak, isSharedSafe).make(len, args);
+
+/// ditto
+auto makeShared(T, bool canHaveWeak = true, Alloc, A...)(ref Alloc allocator, A args) if (!isDynamicArray!T)
 	=> SharedPtr!(T, canHaveWeak, isSharedAllocator!Alloc).make(allocator, args);
 
-// TODO: isSharedPtr!T etc.
+/// ditto
+auto makeShared(T, bool canHaveWeak = true, Alloc, A...)(ref Alloc allocator, size_t len, A args) if (isDynamicArray!T)
+	=> SharedPtr!(T, canHaveWeak, isSharedAllocator!Alloc).make(allocator, len, args);
