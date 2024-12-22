@@ -13,7 +13,7 @@ It does so without wrapping classes in an unnecessary pointer.
 
 $(SRCL ysbase/smart_ptr/reference_wrap.d)
 +/
-struct ReferenceWrap(T, bool isSharedSafe = false)
+struct ReferenceWrap(T)
 {
 	enum isReferenceType = is(T == class) || is(T == interface) || isDynamicArray!T;
 
@@ -36,8 +36,8 @@ struct ReferenceWrap(T, bool isSharedSafe = false)
 		this.reference = reference;
 	}
 
-	/// The underlying value of the `T`. `ref` if not shared.
-	auto ref T value()
+	/// The underlying value of the `T`.
+	ref T value()
 	{
 		import core.atomic : atomicLoad;
 
@@ -45,10 +45,7 @@ struct ReferenceWrap(T, bool isSharedSafe = false)
 		else
 		{
 			assert(reference);
-			static if (isSharedSafe)
-				return reference.atomicLoad;
-			else
-				return *reference;
+			return *reference;
 		}
 	}
 }

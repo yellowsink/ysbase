@@ -100,6 +100,29 @@ The name intrusive comes from the fact that the implementation details of the po
 the pointer intrudes into your object to change the refcount, instead of just leaving it alone (aside from destruction)
 as per usual.
 
+<h2>Is my shared pointer thread safe?</h2>
+
+The unhelpful-but-technically-true answer to this is "its exactly as safe as a normal pointer", but that doesn't really
+help anyone.
+
+All YSBase smart pointers can do their reference counting atomically, if enabled. As this incurs extra overhead, it is
+not always-on, but it is automatically enabled by the `make*` family of functions if either the type is `shared`,
+or you pass a custom allocator with `shared allocate()`.
+
+Note that the sharedness of the allocator is irrelevant to the atomicity of the reference counts, but when unspecified,
+we use one to infer the other as both imply that you plan to share the smart pointer across threads.
+
+You must not share a smart pointer where the allocator's `deallocate` is not `shared` across threads, nor should you
+share one without atomic reference counting across threads.
+
+$(B Smart pointers do not make the type they contain thread-safe.)
+You must either include a lock within your type, or use safe atomic operations yourself to ensure safety.
+The smart pointers will make sure that their job (managing your object's lifetime) is safe across threads,
+but it is not their job to make *your* logic safe.
+
+You should not use the `.value` accessor and `*` operators when sharing across threads, as they do a non-atomic load.
+You should use atomic methods on the `.reference` accessor.
+
 Copyright: Public Domain
 Authors: Hazel Atkinson
 License: $(LINK2 https://unlicense.org, Unlicense)
@@ -220,43 +243,43 @@ unittest
 }
 
 /// A non-shared smart pointer. Holds an object, and destroys and deallocates it when going out of scope.
-alias UniquePtr(T, bool canHaveWeak = false, bool isSharedSafe = false) = SmartPtrImpl!(ControlBlock!(false, canHaveWeak), T, isSharedSafe);
+alias UniquePtr(T, bool canHaveWeak = false, bool atomicRC = is(T == shared)) = SmartPtrImpl!(ControlBlock!(false, canHaveWeak), T, atomicRC);
 
 /// A shared reference-counted smart pointer. While `SharedPtr`s to the managed object exist, it will be kept alive.
-alias SharedPtr(T, bool canHaveWeak = true, bool isSharedSafe = false) = SmartPtrImpl!(ControlBlock!(true, canHaveWeak), T, isSharedSafe);
+alias SharedPtr(T, bool canHaveWeak = true, bool atomicRC = is(T == shared)) = SmartPtrImpl!(ControlBlock!(true, canHaveWeak), T, atomicRC);
 
 /// A weak reference to a managed object owned by a `SharedPtr`.
-alias WeakPtr(T, bool isUnique = false, bool isSharedSafe = false) = SmartPtrImpl!(ControlBlock!(!isUnique, true), T, isSharedSafe, true);
+alias WeakPtr(T, bool isUnique = false, bool atomicRC = is(T == shared)) = SmartPtrImpl!(ControlBlock!(!isUnique, true), T, atomicRC, true);
 
 
 /// Constructs a new object inside a new unique pointer.
-auto makeUnique(T, bool canHaveWeak = false, bool isSharedSafe = false, A...)(A args) if (!isDynamicArray!T)
-	=> UniquePtr!(T, canHaveWeak, isSharedSafe).make(args);
+auto makeUnique(T, bool canHaveWeak = false, A...)(A args) if (!isDynamicArray!T)
+	=> UniquePtr!(T, canHaveWeak).make(args);
 
 /// ditto
-auto makeUnique(T, bool canHaveWeak = false, bool isSharedSafe = false, A...)(size_t len, A args) if (isDynamicArray!T)
-	=> UniquePtr!(T, canHaveWeak, isSharedSafe).make(len, args);
+auto makeUnique(T, bool canHaveWeak = false, A...)(size_t len, A args) if (isDynamicArray!T)
+	=> UniquePtr!(T, canHaveWeak).make(len, args);
 
 /// ditto
 auto makeUnique(T, bool canHaveWeak = false, Alloc, A...)(ref Alloc allocator, A args) if (!isDynamicArray!T)
-	=> UniquePtr!(T, canHaveWeak, isSharedAllocator!Alloc).make(allocator, args);
+	=> UniquePtr!(T, canHaveWeak, is(T == shared) || isSharedAllocator!Alloc).make(allocator, args);
 
 /// ditto
 auto makeUnique(T, bool canHaveWeak = false, Alloc, A...)(ref Alloc allocator, size_t len, A args) if (isDynamicArray!T)
-	=> UniquePtr!(T, canHaveWeak, isSharedAllocator!Alloc).make(allocator, len, args);
+	=> UniquePtr!(T, canHaveWeak, is(T == shared) || isSharedAllocator!Alloc).make(allocator, len, args);
 
 /// Constructs a new object inside a new shared pointer.
-auto makeShared(T, bool canHaveWeak = true, bool isSharedSafe = false, A...)(A args) if (!isDynamicArray!T)
-	=> SharedPtr!(T, canHaveWeak, isSharedSafe).make(args);
+auto makeShared(T, bool canHaveWeak = true, A...)(A args) if (!isDynamicArray!T)
+	=> SharedPtr!(T, canHaveWeak).make(args);
 
 /// ditto
-auto makeShared(T, bool canHaveWeak = true, bool isSharedSafe = false, A...)(size_t len, A args) if (isDynamicArray!T)
-	=> SharedPtr!(T, canHaveWeak, isSharedSafe).make(len, args);
+auto makeShared(T, bool canHaveWeak = true, A...)(size_t len, A args) if (isDynamicArray!T)
+	=> SharedPtr!(T, canHaveWeak).make(len, args);
 
 /// ditto
 auto makeShared(T, bool canHaveWeak = true, Alloc, A...)(ref Alloc allocator, A args) if (!isDynamicArray!T)
-	=> SharedPtr!(T, canHaveWeak, isSharedAllocator!Alloc).make(allocator, args);
+	=> SharedPtr!(T, canHaveWeak, is(T == shared) || isSharedAllocator!Alloc).make(allocator, args);
 
 /// ditto
 auto makeShared(T, bool canHaveWeak = true, Alloc, A...)(ref Alloc allocator, size_t len, A args) if (isDynamicArray!T)
-	=> SharedPtr!(T, canHaveWeak, isSharedAllocator!Alloc).make(allocator, len, args);
+	=> SharedPtr!(T, canHaveWeak, is(T == shared) || isSharedAllocator!Alloc).make(allocator, len, args);

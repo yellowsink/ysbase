@@ -21,10 +21,10 @@ $(SRCLL ysbase/smart_ptr/smart_ptr_impl.d, 27)
 Params:
 	ControlBlock = The type of the relevant control block.
 	ManagedType = The type managed by this smart pointer.
-	isSharedSafe_ = If the pointer is thread-safe or not. All operations are lock-free if thread-safe.
+	hasAtomicRCs_ = If the pointer is thread-safe or not. All operations are lock-free if thread-safe.
 	isWeak_ = If this pointer is a weak ptr.
 +/
-struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ = false)
+struct SmartPtrImpl(ControlBlock, ManagedType, bool hasAtomicRCs_, bool isWeak_ = false)
 {
 // #region Traits
 
@@ -46,8 +46,8 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ 
 		/// Is this a weak pointer?
 		public static bool isWeak;
 
-		/// Does this smart pointer use thread-safe reference counting, allocation, and deallocation?
-		public static bool isSharedSafe;
+		/// Does this smart pointer use atomic reference counting?
+		public static bool hasAtomicRCs;
 	}
 	else
 	{
@@ -59,7 +59,7 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ 
 
 		public enum isWeak = isWeak_;
 
-		public enum isSharedSafe = isSharedSafe_;
+		public enum hasAtomicRCs = hasAtomicRCs_;
 	}
 
 	/// The type managed by this smart pointer
@@ -67,11 +67,11 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ 
 
 	/// The `SharedPtr` or `UniquePtr` type corresponding to this `WeakPtr`
 	static if (isWeak)
-		public alias StrongOfThis = SmartPtrImpl!(ControlBlock, ManagedType, isSharedSafe);
+		public alias StrongOfThis = SmartPtrImpl!(ControlBlock, ManagedType, hasAtomicRCs);
 
 	/// The `WeakPtr` type corresponding to this `SharedPtr` or `UniquePtr`
 	static if (canHaveWeakPtr && !isWeak)
-		public alias WeakOfThis = SmartPtrImpl!(ControlBlock, ManagedType, isSharedSafe, true);
+		public alias WeakOfThis = SmartPtrImpl!(ControlBlock, ManagedType, hasAtomicRCs, true);
 
 	static if (!canHaveWeakPtr)
 		static assert(!isWeak, "Cannot construct a weakptr on a control block without a weak refcount.");
@@ -80,10 +80,10 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ 
 	// if we can or cannot share from this smart pointer
 	static if (isWeak)
 		private enum canShareFrom(SP) =
-			isSmartPtr!SP && SP.canHaveWeakPtr && SP.isSharedSafe == isSharedSafe && is(ManagedType : SP.T);
+			isSmartPtr!SP && SP.canHaveWeakPtr && SP.hasAtomicRCs == hasAtomicRCs && is(ManagedType : SP.T);
 	else
 		private enum canShareFrom(SP) =
-			isSmartPtr!SP && SP.isManagedObjectShared && SP.isSharedSafe == isSharedSafe && is(ManagedType : SP.T);
+			isSmartPtr!SP && SP.isManagedObjectShared && SP.hasAtomicRCs == hasAtomicRCs && is(ManagedType : SP.T);
 
 // #endregion
 
@@ -91,11 +91,11 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ 
 
 	mixin template StateImpl()
 	{
-		package ReferenceWrap!(ManagedType, isSharedSafe) _managed_obj;
+		package ReferenceWrap!ManagedType _managed_obj;
 		package ControlBlock* _control_block;
 	}
 
-	static if (isSharedSafe) shared { mixin StateImpl!(); }
+	static if (hasAtomicRCs) shared { mixin StateImpl!(); }
 	else mixin StateImpl!();
 
 	/// Equivalent to `SmartPtrImpl.init`.
@@ -197,7 +197,8 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ 
 	{
 		import ysbase.allocation : theAllocator, processAllocator;
 
-		static if (isSharedSafe)
+		// this isn't strictly necessary, but if you're sharing the RC, we should use a shared allocator.
+		static if (hasAtomicRCs)
 			return make(processAllocator, a);
 		else
 			return make(theAllocator, a);
@@ -228,7 +229,7 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ 
 	{
 		import ysbase.allocation : theAllocator, processAllocator;
 
-		static if (isSharedSafe)
+		static if (hasAtomicRCs)
 			return make(processAllocator, len, a);
 		else
 			return make(theAllocator, len, a);
@@ -247,7 +248,7 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ 
 
 		if (_control_block)
 		{
-			static if (isSharedSafe)
+			static if (hasAtomicRCs)
 				return atomicLoad(&_control_block.strongRefCount);
 			else
 				return _control_block.strongRefCount;
@@ -263,7 +264,7 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ 
 
 		if (_control_block)
 		{
-			static if (isSharedSafe)
+			static if (hasAtomicRCs)
 				return atomicLoad(&_control_block.weakRefCount);
 			else
 				return _control_block.weakRefCount;
@@ -288,13 +289,12 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ 
 		alias opUnary = value;
 	}
 
-	/++ Gets the value out of the smart pointer. `ref` if not `SharedSafe`.
-	 +
-	 + This restriction is because for a shared managed value, writes would require locking or atomicity.
+	/++ Gets the value out of the smart pointer. Note that this is never an atomic load,
+	 + for thread-safe lock-free access, use `reference`.
 	 +
 	 + In debug builds, will perform checking for null derefs and for dangling WeakPtr derefs.
 	 +/
-	auto ref ManagedType value() @property
+	ref ManagedType value() @property
 	{
 		assert(_managed_obj.reference, "Cannot dereference an empty smart pointer");
 		static if (isWeak)
@@ -303,7 +303,7 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ 
 		return _managed_obj.value;
 	}
 
-	/// Gets a reference to the value in the smart pointer. `ManagedType` for class types, `ManagedType*` for value types.
+	/// Gets a reference to the value in the smart pointer. `ManagedType` for class and slice types, else `ManagedType*`.
 	version (D_Ddoc)
 		ManagedType* reference() @property;
 	else
@@ -345,7 +345,7 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ 
 		else
 			ptrdiff_t* rc = &_control_block.strongRefCount;
 
-		static if (isSharedSafe)
+		static if (hasAtomicRCs)
 			return atomicOp!"+="(*rc, 1);
 		else
 			return ++(*rc);
@@ -364,7 +364,7 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ 
 		else
 			ptrdiff_t* rc = &_control_block.strongRefCount;
 
-		static if (isSharedSafe)
+		static if (hasAtomicRCs)
 			return atomicOp!"-="(*rc, 1);
 		else
 			return --(*rc);
