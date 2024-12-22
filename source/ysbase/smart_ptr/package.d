@@ -242,6 +242,31 @@ unittest
 	assert(*sp2 == [0, 0, 0]);
 }
 
+
+/// You can still pass unique pointers around by moving them
+unittest
+{
+	import core.lifetime : move;
+
+	UniquePtr!int addOneRef(UniquePtr!int up)
+	{
+		(*up)++;
+		return move(up); // no move here -> Error: SmartPtrImpl is not copyable
+	}
+
+	auto one = makeUnique!int(1);
+
+	auto two = addOneRef(move(one)); // no move here -> Error: SmartPtrImpl is not copyable
+
+	assert(one.isNullPtr);
+	assert(*two == 2);
+
+	move(two, one); // put it back into one
+
+	assert(two.isNullPtr);
+	assert(*one == 2);
+}
+
 /// A non-shared smart pointer. Holds an object, and destroys and deallocates it when going out of scope.
 alias UniquePtr(T, bool canHaveWeak = false, bool atomicRC = is(T == shared)) = SmartPtrImpl!(ControlBlock!(false, canHaveWeak), T, atomicRC);
 
