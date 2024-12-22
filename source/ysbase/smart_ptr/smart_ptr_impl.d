@@ -21,10 +21,10 @@ $(SRCLL ysbase/smart_ptr/smart_ptr_impl.d, 27)
 Params:
 	ControlBlock = The type of the relevant control block.
 	ManagedType = The type managed by this smart pointer.
-	isSharedSafe = If the pointer is thread-safe or not. All operations are lock-free if thread-safe.
-	isWeak = If this pointer is a weak ptr.
+	isSharedSafe_ = If the pointer is thread-safe or not. All operations are lock-free if thread-safe.
+	isWeak_ = If this pointer is a weak ptr.
 +/
-struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe, bool isWeak = false)
+struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe_, bool isWeak_ = false)
 {
 	static assert(isCtrlBlock!ControlBlock, "ControlBlock must be a control block.");
 
@@ -32,53 +32,56 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe, bool isWeak = 
 	{
 		// sigh. ddox.
 
-		/// Is this smart pointer a `UniquePtr`?
-		public static bool isUniquePtr;
+		/// Is the managed object shared? (SharedPtr)
+		public static bool isManagedObjectShared;
 
-		/// Does this smart pointer share the reference with other smart pointers? (`SharedPtr` or `WeakPtr`)
-		public static bool isSharedOrWeakPtr;
-
-		/// Is this a `WeakPtr`?
-		public static bool isWeakPtr;
-
-		/// Is this a `SharedPtr` (not a `WeakPtr`)
-		public static bool isSharedPtr;
-
-		/// Can this smart pointer's managed object have weak references to it?
+		/// Can this smart pointer have weak references taken of it?
 		public static bool canHaveWeakPtr;
 
-		/// Is this smart pointer thread-safe? (Is the managed object and control block `shared`?)
-		public static bool SharedSafe;
+		/// Is the managed object non-shared? (UniquePtr)
+		public static bool isManagedObjectUnique;
+
+		/// Is this a weak pointer?
+		public static bool isWeak;
+
+		/// Does this smart pointer use thread-safe reference counting, allocation, and deallocation?
+		public static bool isSharedSafe;
 	}
 	else
 	{
-		public enum isUniquePtr = isUniqueCtrlBlock!ControlBlock;
+		public enum isManagedObjectShared = TemplateArgsOf!ControlBlock[0];
 
-		public enum isSharedOrWeakPtr = isSharedCtrlBlock!ControlBlock;
+		public enum canHaveWeakPtr = TemplateArgsOf!ControlBlock[1];
 
-		public enum isWeakPtr = isWeak;
+		public enum isManagedObjectUnique = !isManagedObjectShared;
 
-		public enum isSharedPtr = isSharedOrWeakPtr && !isWeak;
+		public enum isWeak = isWeak_;
 
-		public enum canHaveWeakPtr = isSharedOrWeakPtr && TemplateArgsOf!ControlBlock[1];
-
-		public enum SharedSafe = isSharedSafe;
+		public enum isSharedSafe = isSharedSafe_;
 	}
 
 	/// The type managed by this smart pointer
 	public alias T = ManagedType;
 
-	/// The `SharedPtr` type corresponding to this `WeakPtr`
+	/// The `SharedPtr` or `UniquePtr` type corresponding to this `WeakPtr`
 	static if (isWeak)
 		public alias StrongOfThis = SmartPtrImpl!(ControlBlock, ManagedType, isSharedSafe);
 
-	/// The `WeakPtr` type corresponding to this `SharedPtr`
+	/// The `WeakPtr` type corresponding to this `SharedPtr` or `UniquePtr`
 	static if (canHaveWeakPtr && !isWeak)
 		public alias WeakOfThis = SmartPtrImpl!(ControlBlock, ManagedType, isSharedSafe, true);
 
-
 	static if (!canHaveWeakPtr)
-		static assert(!isWeak, "UniquePtr and SharedPtrNoWeak cannot be weak pointers.");
+		static assert(!isWeak, "Cannot construct a weakptr on a control block without a weak refcount.");
+
+
+	// if we can or cannot share from this smart pointer
+	static if (isWeak)
+		private enum canShareFrom(SP) =
+			isSmartPtr!SP && SP.canHaveWeakPtr && SP.isSharedSafe == isSharedSafe && is(ManagedType : SP.T);
+	else
+		private enum canShareFrom(SP) =
+			isSmartPtr!SP && SP.isManagedObjectShared && SP.isSharedSafe == isSharedSafe && is(ManagedType : SP.T);
 
 	mixin template StateImpl()
 	{
@@ -92,17 +95,15 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe, bool isWeak = 
 	/// Equivalent to `SmartPtrImpl.init`.
 	this(typeof(null) nil) {}
 
-	/++ Creates a new smart pointer that shares `rhs`'s object. Defined for `SharedPtr` and `WeakPtr` only
+	/++ Creates a new smart pointer that shares `rhs`'s object. Not defined for `UniquePtr`
 	 + (this is the copy constructor, and `UniquePtr` is uncopyable).
 	 +
 	 + Params:
 	 +   rhs = A `SharedPtr` to share from.
 	 +         Must match our own safety and, and its type must be the same as (or a class descendant of) ours.
 	 +/
-	static if (isSharedOrWeakPtr)
-	this(Rhs)(auto scope ref Rhs rhs)
-	// Rhs must be a smart pointer, that is shared, and matches our sharedness, and must have a compatible type.
-	if (isSmartPtr!Rhs && Rhs.isSharedOrWeakPtr && Rhs.SharedSafe == isSharedSafe && is(ManagedType : Rhs.T))
+	static if (isManagedObjectShared || isWeak)
+	this(Rhs)(auto scope ref Rhs rhs) if (canShareFrom!Rhs)
 	{
 		this = rhs;
 	}
@@ -110,14 +111,14 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe, bool isWeak = 
 	// we need to tell the language specifically how copy constructors work in the trivial case,
 	// or despite our implementation above, it will do a naive default copy construct.
 	/// ditto
-	static if (isSharedOrWeakPtr)
+	static if (isManagedObjectShared || isWeak)
 	this(ref typeof(this) rhs)
 	{
 		this = rhs;
 	}
 
 	// unique pointers are not copy constructible
-	static if (isUniquePtr)
+	static if (isManagedObjectUnique && !isWeak)
 		@disable this(this);
 
 	/// Makes this a null smart pointer. Releases the reference to the contained object if applicable.
@@ -137,17 +138,17 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe, bool isWeak = 
 	 +   rhs = A `SharedPtr` to share from.
 	 +         Must match our own safety and, and its type must be the same as (or a class descendant of) ours.
 	 +/
-	static if (isSharedOrWeakPtr)
-	void opAssign(Rhs)(auto scope ref Rhs rhs)
-	// Rhs must be a smart pointer, that is shared, and matches our sharedness, and must have a compatible type.
-	if (isSmartPtr!Rhs && Rhs.isSharedOrWeakPtr && Rhs.SharedSafe == isSharedSafe && is(ManagedType : Rhs.T))
+	static if (isManagedObjectShared || isWeak)
+	void opAssign(Rhs)(auto scope ref Rhs rhs) if (canShareFrom!Rhs)
 	{
 		// clean the slate: set ourselves to the null smart pointer
 		if (_control_block !is null) this = null;
 
+		// if the rhs is a null pointer, stop here.
 		if (!rhs.refCountStrong) return;
 
-		static if (Rhs.isWeakPtr)
+		// if we're copying a weak pointer, and its already dangling, don't bother sharing it either.
+		static if (Rhs.isWeak)
 			if (rhs.isDangling) return;
 
 		_managed_obj = rhs._managed_obj;
@@ -172,7 +173,8 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe, bool isWeak = 
 		newsp._control_block = alloc.make!ControlBlock();
 		newsp._control_block.deallocate = (void[] block) { alloc.deallocate(block); };
 
-		static if (isSharedOrWeakPtr) newsp.incr_ref();
+		static if (isManagedObjectShared || canHaveWeakPtr)
+			newsp.incr_ref();
 
 		newsp._managed_obj = alloc.make!ManagedType(a);
 
@@ -183,33 +185,41 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe, bool isWeak = 
 	static if (!isWeak)
 	static typeof(this) make(Args...)(Args a)
 	{
-		import ysbase.allocation : theAllocator;
+		import ysbase.allocation : theAllocator, processAllocator;
 
-		return make(theAllocator, a);
+		static if (isSharedSafe)
+			return make(processAllocator, a);
+		else
+			return make(theAllocator, a);
 	}
 
-	/// How many strong references there are to the managed object. Defined for `SharedPtr` and `WeakPtr`.
-	static if (isSharedOrWeakPtr)
+	/// How many strong references there are to the managed object. 0 for null and dangling pointers.
+	/// Not defined for UniquePtr unless it can have weak pointers.
+	static if (isManagedObjectShared || canHaveWeakPtr)
 	ptrdiff_t refCountStrong() @property
 	{
+		import core.atomic : atomicLoad;
+
 		if (_control_block)
 		{
 			static if (isSharedSafe)
-				return _control_block.atomicLoad.strongRefCount;
+				return atomicLoad(&_control_block.strongRefCount);
 			else
 				return _control_block.strongRefCount;
 		}
 		return 0;
 	}
 
-	/// How many weak references there are. Defined for `WeakPtr` and any `SharedPtr` with weak pointers enabled.
+	/// How many weak references there are. Defined for `WeakPtr` and any strong pointer with weak pointers enabled.
 	static if (canHaveWeakPtr)
 	ptrdiff_t refCountWeak() @property
 	{
+		import core.atomic : atomicLoad;
+
 		if (_control_block)
 		{
 			static if (isSharedSafe)
-				return _control_block.atomicLoad.weakRefCount;
+				return atomicLoad(&_control_block.weakRefCount);
 			else
 				return _control_block.weakRefCount;
 		}
@@ -260,24 +270,24 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe, bool isWeak = 
 		return _managed_obj.reference;
 	}
 
-	/// Create a weak pointer to the object managed by this shared pointer.
+	/// Create a weak pointer to the object managed by this smart pointer.
 	static if (canHaveWeakPtr && !isWeak)
 	WeakOfThis weakRef()
 	{
 		return WeakOfThis(this);
 	}
 
-	/// Tries to promote a weak pointer back to a shared pointer.
+	/// Tries to promote a weak pointer back to a shared pointer (cannot promote to a unique pointer).
 	/// Returns an empty shared pointer if this is dangling.
 	/// If your code relies on this, it is probably a serious code smell.
-	static if (isWeak)
+	static if (isWeak && isManagedObjectShared)
 	StrongOfThis tryPromoteToShared()
 	{
 		return StrongOfThis(this);
 	}
 
 	// returns the *new* value
-	static if (isSharedOrWeakPtr)
+	static if (isManagedObjectShared || canHaveWeakPtr)
 	private ptrdiff_t incr_ref()
 	{
 		import core.atomic : atomicOp;
@@ -297,7 +307,7 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe, bool isWeak = 
 	}
 
 	// returns the *new* value
-	static if (isSharedOrWeakPtr)
+	static if (isManagedObjectShared || canHaveWeakPtr)
 	private ptrdiff_t decr_ref()
 	{
 		import core.atomic : atomicOp;
@@ -318,48 +328,57 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe, bool isWeak = 
 
 	// implements the release logic for ~this()
 	// leaves dangling pointers in the struct, so if used outside of the destructor, must nullify the internal pointers.
-	static if (isUniquePtr)
-		private void destructorImpl()
-		{
-			if (isNullPtr) return;
+	private void destructorImpl()
+	{
+		if (isNullPtr) return;
 
+		static if (isManagedObjectUnique)
+		{
+			// uniqueptr and weakptr to uniqueptr
+
+			// we can just deallocate the object
 			deallocateManagedObj();
-			deallocateControlBlock();
-		}
-	else
-		private void destructorImpl()
-		{
-			if (isNullPtr) return;
 
-			static if (!isWeak)
-				{
-				// strong references
-
-				if (decr_ref() == 0)
-					{
-					// last reference! destroy the object
-					deallocateManagedObj();
-
-					// if we can have weak pointers, we must check that there are none before we destroy the control block
-					static if (canHaveWeakPtr)
-						auto canDestroyCtrl = refCountWeak() == 0;
-					else
-						auto canDestroyCtrl = true;
-
-					if (canDestroyCtrl)
-						deallocateControlBlock();
-				}
-			}
+			// and see if we need to deallocate the control block
+			static if (!canHaveWeakPtr)
+				deallocateControlBlock();
 			else
-				{
-				// weak pointer
-				if (decr_ref() == 0 && refCountStrong() == 0)
-					{
-					// last weak pointer gone, and there are no strong refs left, destroy the control block
+			{
+				if (refCountWeak() == 0)
 					deallocateControlBlock();
-				}
+				else
+					decr_ref(); // having weak pointers means we still need to refcount unique pointers.
 			}
 		}
+		else static if (!isWeak)
+		{
+			// shared ptr
+
+			if (decr_ref() == 0)
+				{
+				// last reference! destroy the object
+				deallocateManagedObj();
+
+				// if we can have weak pointers, we must check that there are none before we destroy the control block
+				static if (canHaveWeakPtr)
+					auto canDestroyCtrl = refCountWeak() == 0;
+				else
+					auto canDestroyCtrl = true;
+
+				if (canDestroyCtrl)
+					deallocateControlBlock();
+			}
+		}
+		else
+		{
+			// weak pointer to sharedptr
+			if (decr_ref() == 0 && refCountStrong() == 0)
+				{
+				// last weak pointer gone, and there are no strong refs left, destroy the control block
+				deallocateControlBlock();
+			}
+		}
+	}
 
 	// implements the deallocation for ~this()
 	// leaves dangling pointers in the struct, so should ONLY be used in the destructor.
@@ -409,4 +428,3 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool isSharedSafe, bool isWeak = 
 // TODO: (maybe) swap, the weird atomic methods that BTl has.
 // TODO: full unit tests
 // TODO: intrusive pointers (both with and without weak support)
-// TODO: uniqueptr weak pointers?

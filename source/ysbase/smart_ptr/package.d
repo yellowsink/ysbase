@@ -112,6 +112,8 @@ public import ysbase.smart_ptr.smart_ptr_impl : isSmartPtr;
 
 import ysbase.smart_ptr.smart_ptr_impl : SmartPtrImpl;
 
+import ysbase.allocation : isSharedAllocator;
+
 ///
 unittest
 {
@@ -188,59 +190,54 @@ unittest
 	assert(numberOfDestructorCalls == 1);
 }
 
+/// weak pointer to unique pointers are possible, but be aware that they will cause the uniqueptr to keep refcounts.
+unittest
+{
+	WeakPtr!(int, true) weak;
+
+	{
+		auto sp = makeUnique!(int, true)(5);
+
+		weak = sp;
+
+		assert(*weak == 5);
+	}
+
+	assert(weak.isDangling);
+}
+
 /// A non-shared smart pointer. Holds an object, and destroys and deallocates it when going out of scope.
-alias UniquePtr(T, bool isSharedSafe = false) = SmartPtrImpl!(UniqueCtrlBlock, T, isSharedSafe);
+alias UniquePtr(T, bool canHaveWeak = false, bool isSharedSafe = false) = SmartPtrImpl!(ControlBlock!(false, canHaveWeak), T, isSharedSafe);
 
-/++ A shared reference-counted smart pointer. Supports weak references.
- +
- + While `SharedPtr` references to the managed object exist, it will be kept alive.
- +
- + `WeakPtr` references may be taken, which can access the managed object if `SharedPtr` references exist,
- + but will not prevent managed object destruction when all `SharedPtr`s are destroyed.
- +/
-alias SharedPtr(T, bool isSharedSafe = false) = SmartPtrImpl!(SharedCtrlBlock, T, isSharedSafe);
-
-/// `SharedPtr` without support for taking weak references.
-alias SharedPtrNoWeak(T, bool isSharedSafe = false) = SmartPtrImpl!(ControlBlock!(true, false), T, isSharedSafe);
+/// A shared reference-counted smart pointer. While `SharedPtr`s to the managed object exist, it will be kept alive.
+alias SharedPtr(T, bool canHaveWeak = true, bool isSharedSafe = false) = SmartPtrImpl!(ControlBlock!(true, canHaveWeak), T, isSharedSafe);
 
 /// A weak reference to a managed object owned by a `SharedPtr`.
-alias WeakPtr(T, bool isSharedSafe = false) = SmartPtrImpl!(SharedCtrlBlock, T, isSharedSafe, true);
+alias WeakPtr(T, bool isUnique = false, bool isSharedSafe = false) = SmartPtrImpl!(ControlBlock!(!isUnique, true), T, isSharedSafe, true);
 
 
 /// Constructs a new object inside a new unique pointer.
-auto makeUnique(T, bool isSharedSafe = false, A...)(A args)
+auto makeUnique(T, bool canHaveWeak = false, bool isSharedSafe = false, A...)(A args)
 {
-	return UniquePtr!(T, isSharedSafe).make(args);
+	return UniquePtr!(T, canHaveWeak, isSharedSafe).make(args);
 }
 
 /// ditto
-auto makeUnique(T, bool isSharedSafe = false, Alloc, A...)(ref Alloc allocator, A args)
+auto makeUnique(T, bool canHaveWeak = false, Alloc, A...)(ref Alloc allocator, A args)
 {
-	return UniquePtr!(T, isSharedSafe).make(allocator, args);
+	return UniquePtr!(T, canHaveWeak, isSharedAllocator!Alloc).make(allocator, args);
 }
 
 /// Constructs a new object inside a new shared pointer.
-auto makeShared(T, bool isSharedSafe = false, A...)(A args)
+auto makeShared(T, bool canHaveWeak = true, bool isSharedSafe = false, A...)(A args)
 {
-	return SharedPtr!(T, isSharedSafe).make(args);
+	return SharedPtr!(T, canHaveWeak, isSharedSafe).make(args);
 }
 
 /// ditto
-auto makeShared(T, bool isSharedSafe = false, Alloc, A...)(ref Alloc allocator, A args)
+auto makeShared(T, bool canHaveWeak = true, Alloc, A...)(ref Alloc allocator, A args)
 {
-	return SharedPtr!(T, isSharedSafe).make(allocator, args);
-}
-
-/// Constructs a new object inside a new shared pointer without weak references.
-auto makeSharedNoWeak(T, bool isSharedSafe = false, A...)(A args)
-{
-	return SharedPtrNoWeak!(T, isSharedSafe).make(args);
-}
-
-/// ditto
-auto makeSharedNoWeak(T, bool isSharedSafe = false, Alloc, A...)(ref Alloc allocator, A args)
-{
-	return SharedPtrNoWeak!(T, isSharedSafe).make(allocator, args);
+	return SharedPtr!(T, canHaveWeak, isSharedAllocator!Alloc).make(allocator, args);
 }
 
 // TODO: isSharedPtr!T etc.

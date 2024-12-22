@@ -26,8 +26,9 @@ struct ControlBlock(bool NeedsRefCount, bool NeedsWeakCount)
 	/// Disable copy constructor
 	@disable this(this);
 
+	// still keep it if we only need weak, as having weak means you need to track if dangling or not.
 	/// Primary reference count, keeps the managed object live when >= 1
-	static if (NeedsRefCount)
+	static if (NeedsRefCount || NeedsWeakCount)
 		ptrdiff_t strongRefCount;
 
 	/// Weak reference count, keeps the *control block* (not the managed object) live when this or the strong count >= 1
@@ -43,27 +44,9 @@ struct ControlBlock(bool NeedsRefCount, bool NeedsWeakCount)
 	void delegate(void[]) deallocate;
 }
 
-/// A control block for a UniquePtr
-alias UniqueCtrlBlock = ControlBlock!(false, false);
 
-/// A control block for a SharedPtr or IntrusivePtr
-alias SharedCtrlBlock = ControlBlock!(true, true);
+import std.traits : isInstanceOf;
 
-import std.traits : isInstanceOf, TemplateArgsOf;
-
-// ddox doesn't like an eponymous enum template. too bad!
-
+// ddox doesn't really like an eponymous enum template. too bad!
 /// If `T` is some control block.
 enum isCtrlBlock(T) = isInstanceOf!(ControlBlock, T);
-
-/// If `T` is a $(D UniquePtr) control block.
-enum isUniqueCtrlBlock(T) = isCtrlBlock!T && !TemplateArgsOf!T[0] && !TemplateArgsOf!T[1];
-
-/// If `T` is a $(D SharedPtr) or $(D WeakPtr) control block.
-enum isSharedCtrlBlock(T) = isCtrlBlock!T && TemplateArgsOf!T[0] && TemplateArgsOf!T[1];
-
-static assert(isUniqueCtrlBlock!UniqueCtrlBlock);
-static assert(isSharedCtrlBlock!SharedCtrlBlock);
-
-static assert(!isUniqueCtrlBlock!SharedCtrlBlock);
-static assert(!isSharedCtrlBlock!UniqueCtrlBlock);

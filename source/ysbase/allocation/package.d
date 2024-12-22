@@ -48,6 +48,12 @@ public import ysbase.allocation.building_blocks;
 
 import std.algorithm : max;
 
+import std.traits : hasFunctionAttributes;
+
+/// If this allocator has `shared` allocate and deallocate functions.
+enum isSharedAllocator(A) =
+	hasFunctionAttributes!(A.allocate, "shared") && hasFunctionAttributes!(A.deallocate, "shared");
+
 version (D_Ddoc)
 	mixin template EncapsulatedMallocator() {
 		Mallocator alloc;
@@ -64,7 +70,7 @@ version (D_Ddoc)
 * It is modelled after jemalloc.
 * It is `shared`-safe (if desired), so you may pass memory to another thread and `deallocate` it there.
 *
-* $(SRCLL ysbase/allocation/package.d, 78)
+* $(SRCLL ysbase/allocation/package.d, 84)
 *
 * Params:
 * 	BA = The $(U b)acking $(U a)llocator to obtain memory from.
