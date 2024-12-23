@@ -19,7 +19,7 @@ This aims to make a package I can include as the base for my projects. Hopefully
      - [x] smart pointers
      - [ ] vectors
      - [ ] strings
-     - [ ] ref-counted struct wrappers
+     - [x] ref-counted struct wrappers
      - Inspired by the API of [BTL](https://submada.github.io/btl/) but using a completely original implementation.
      - With practical considerations inspired by my time writing embedded software in D
 

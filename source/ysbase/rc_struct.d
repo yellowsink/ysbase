@@ -90,7 +90,72 @@ private
 		~ "() => (*___rcs_backing_ptr)." ~ memberName ~ ";";
 }
 
-///
+/// Basic RAII posix file demo with forwarding
+version (Posix)
+unittest
+{
+	struct RAIIFile
+	{
+		import core.sys.posix.fcntl : open, O_RDWR, O_CREAT, O_TRUNC;
+		import core.sys.posix.unistd : read, write, close, unlink, lseek;
+		import core.sys.posix.stdio : SEEK_SET;
+		import std.string : toStringz, assumeUTF;
+		import std.conv : octal;
+
+		int fd;
+		string path;
+
+		this(string p)
+		{
+			// create a file!
+			fd = open(p.toStringz, O_CREAT | O_TRUNC | O_RDWR, octal!"777");
+			path = p;
+		}
+
+		// disable copying this struct
+		@disable this(ref RAIIFile);
+
+		string readF()
+		{
+			ubyte[64] buf;
+
+			auto bytesread = read(fd, buf.ptr, 64);
+			assert(bytesread >= 0);
+			lseek(fd, 0, SEEK_SET);
+
+			return buf[0 .. bytesread].assumeUTF;
+		}
+
+		void writeF(string s)
+		{
+			write(fd, s.toStringz, s.length);
+			lseek(fd, 0, SEEK_SET);
+		}
+
+		~this()
+		{
+			// destroy the file
+			close(fd);
+			unlink(path.toStringz);
+		}
+	}
+
+	auto file = RcStruct!RAIIFile("/tmp/test.txt");
+	assert(file.fd != 0);
+
+	// copy the file!
+	// note without rcstruct this would fail
+	auto alsoFile = file;
+
+	alsoFile.writeF("hi!!");
+
+	assert(file.readF() == "hi!!");
+
+	// alsoFile goes out of scope here and does nothing
+	// then file goes out of scope and closes the file.
+}
+
+/// Showing singleton behaviour
 unittest
 {
 	static int consCount;
