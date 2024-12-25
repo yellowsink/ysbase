@@ -444,21 +444,21 @@ public:
 		insertAt(idx, T(args));
 	}
 
-	/// Removes the element at `idx` from the list.
-	void removeAt(size_t idx)
+	/// Removes `n` elements from `idx` from the list.
+	void removeAt(size_t idx, size_t n = 1)
 	{
-		import core.lifetime : move, moveEmplace;
-
 		assert(idx < length, "Cannot remove an element at an index past the end of the list");
 
+		if (n == 0) return;
+
 		// fast path for the last element
-		if (idx + 1 == length)
+		if (n == 1 && idx + 1 == length)
 			_store[idx] = T.init;
 		else
 			// blit the elements left.
-			_blitByOne!true(idx, (length - idx));
+			_blitStoreBy(-n, idx + n, (length - idx - n));
 
-		_length--;
+		_length -= n;
 	}
 
 	/// Moves an element out of `this[idx]`. Equivalent to a simple `move(list[idx])`.
@@ -507,29 +507,6 @@ public:
 
 // #region internals
 private:
-
-	// blits a range to the left or to the right by one, as efficiently as possible.
-	// moves `fillWith` into the newly opened space, and if `destructTarget`, calls the destructor on the lost element
-	// else it just assumes its uninitialized and blits over it.
-	void _blitByOne(bool moveLeft = false, bool destructTarget = true)(size_t idx, size_t len, auto ref T fill = T.init)
-	{
-		import core.stdc.string : memmove;
-		import core.lifetime : moveEmplace;
-
-		static if (moveLeft)
-			assert(idx > 0, "blit out of range");
-		else
-			assert(idx + len);
-
-		enum dx = moveLeft ? -1 : 1;
-
-		auto uninit = _blitStoreBy!destructTarget(dx, idx, len);
-
-		assert(uninit.length == 1);
-
-		// finally, the newly opened element
-		moveEmplace(uninit[0], fill);
-	}
 
 	// blits a range to the left or to the right by `dx`, as efficiently as possible.
 	// If `destructTarget`, calls the destructor on the lost elements else it just assumes uninit and blits over it.
