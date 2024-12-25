@@ -9,7 +9,7 @@ import ysbase.allocation : reallocate, stateSize, theAllocator, expandArray, shr
 
 import std.traits : isInstanceOf, hasElaborateDestructor;
 
-import std.range : isInputRange, ElementType;
+import std.range : isInputRange, ElementType, hasLength;
 
 import std.algorithm : max;
 
@@ -137,13 +137,8 @@ public:
 	/// Note this copies every element, it does not share them.
 	void opAssign(Rhs)(auto scope ref Rhs rhs) if (isInputRange!Rhs && is(T == ElementType!Rhs))
 	{
-		import std.range : hasLength;
-
 		static if (hasLength!Rhs)
-		{
-			if (rhs.length > capacity)
-				_autoGrow(rhs.length - capacity);
-		}
+			reserve(rhs.length);
 
 		size_t copiedLen;
 		foreach (ref element; rhs)
@@ -301,13 +296,8 @@ public:
 	/// In-place append operator `~=` for a range, appends the contents of the range `rhs` onto the end of this
 	void opOpAssign(string op: "~", R)(R rhs) if (isInputRange!T && is(T == ElementType!R))
 	{
-		import std.range : hasLength;
-
 		static if (hasLength!R)
-		{
-			if (rhs.length > freeSpace)
-				_autoGrow(rhs.length - freeSpace);
-		}
+			reserve(rhs.length);
 
 		foreach (ref element; rhs)
 		{
@@ -323,7 +313,7 @@ public:
 	/// In-place append operator `~=` for a value, appends the value onto the end of this
 	void opOpAssign(string op : "~")(auto ref T value)
 	{
-		if (!freeSpace) _autoGrow();
+		reserve(1);
 
 		_store[_length++] = value;
 	}
@@ -394,7 +384,7 @@ public:
 	/// Constructs a new element at the end of this array.
 	void emplaceBack(A...)(auto ref A args)
 	{
-		if (!freeSpace) _autoGrow();
+		reserve(1);
 
 		// for non-class types, there is no () constructor, and we keep the unused capacity default-inited at all times.
 		static if (A.length == 0 && !is(T == class) && !is(T == interface))
@@ -409,41 +399,42 @@ public:
 	/// Inserts `value` into the list such that it is then at `list[idx]`.
 	void insertAt()(size_t idx, auto ref T value)
 	{
-		import core.stdc.string : memmove;
+		import std.range : only;
+
+		insertAt(idx, only(value));
+	}
+
+	/// Inserts `range` into the list at `idx`. The length of the list must be known ahead of time.
+	void insertAt(R)(size_t idx, auto ref R range) if (isInputRange!R && hasLength!R)
+	{
 		import core.lifetime : moveEmplace;
 
-		// Can insert anywhere within the list (< length) or after the end (= length)
-		assert(idx <= length, "inserting at this idx would overflow");
+		// bounds check
+		auto rangLen = range.length;
 
-		// we can do it in our current backing, shift over and insert
-		if (freeSpace)
+		assert(idx <= length, "index must be inside of the list");
+
+		// a reserve then a blit is very inefficient but i'll make it better later.
+		reserve(rangLen);
+
+		// fast path for the end of the list
+		if (idx == length)
 		{
-			// blit right
-			_blitByOne!(false, false)(idx, (length - idx), value);
-
-			_length++;
+			this ~= range;
+			return;
 		}
-		else
-		{
-			// we're full; to avoid extra work, just allocate a new array and copy it
 
-			auto newSize = capacity + max(1, capacity / 2);
+		// blit over elements to make space
+		auto openedUpSpace = _blitStoreBy!false(rangLen, idx, length - idx);
 
-			auto newArray = cast(T[]) _allocator.allocate(newSize * T.sizeof);
+		assert(openedUpSpace == rangLen, "range to insert is not the same length as the opened up spaces");
 
-			_blit(_store[i .. idx], newArray[i .. idx]);
+		size_t i;
+		foreach (ref value; range)
+			moveEmplace(openedUpSpace[i++], value);
 
-			moveEmplace(newArray[idx], value);
 
-			_blit(_store[idx .. length], newArray[idx + 1 .. length + 1]);
-
-			moveEmplace(newArray[idx], T.init); // use moveEmplace here as a simple `=` could do copy construction and BS
-
-			_allocator.deallocate(cast(void[]) _store);
-
-			_length++;
-			_store = newArray;
-		}
+		length += rangLen;
 	}
 
 	/// Constructs a new element in the middle of the list such that it is at `list[idx]`
@@ -532,26 +523,49 @@ private:
 
 		enum dx = moveLeft ? -1 : 1;
 
-		static if (moveLeft)
-		{
-			auto targetEIdx = idx - 1;
-			auto fillEIdx = idx + len - 1;
-		}
-		else
-		{
-			auto targetEIdx = idx + len;
-			auto fillEIdx = idx;
-		}
+		auto uninit = _blitStoreBy!destructTarget(dx, idx, len);
 
-		// first, destruct the target element
+		assert(uninit.length == 1);
+
+		// finally, the newly opened element
+		moveEmplace(uninit[0], fill);
+	}
+
+	// blits a range to the left or to the right by `dx`, as efficiently as possible.
+	// If `destructTarget`, calls the destructor on the lost elements else it just assumes uninit and blits over it.
+	// Returns a slice to the elements that need initializing - the object will be in an invalid state until inited.
+	T[] _blitStoreBy(bool destructTarget = true)(ptrdiff_t dx, size_t idx, size_t len)
+	{
+		import core.stdc.string : memmove;
+		import core.lifetime : moveEmplace;
+
+		if (dx == 0) return [];
+
+		// lower bound
+		assert(idx + dx >= 0, "blit out of range");
+
+		// upper bound
+		assert(idx + dx + len <= capacity, "blit out of range");
+
+		// first, destruct the target elements
 		static if (hasElaborateDestructor!T && destructTarget)
-			destroy!false(_store[targetEIdx]);
+		{
+			// if we're moving right, targets are from past the end of the slice, for dx elems,
+			// else its dx elements to the left of it.
+			auto targets = dx > 0 ? _store[idx + len .. idx + len + dx] : _store[idx + dx .. idx];
+
+			foreach (ref value; targets) destroy!false(value);
+		}
 
 		// then, blit the array over
 		_blit(_store[idx .. idx + len], _store[idx + dx .. idx + dx + len]);
 
-		// finally, the newly opened element
-		moveEmplace(_store[fillEIdx], fill);
+		// finally, return the newly opened elements
+		// if we're moving right, these are the first dx of the array
+		// if we're moving left, these are the last dx of the array
+		return dx > 0
+			? _store[idx .. idx + dx]
+			: _store[idx + len - dx .. idx + len];
 	}
 
 	// correctly calls opPostMove but does not call destructors for overwritten types nor re-initialize src.
