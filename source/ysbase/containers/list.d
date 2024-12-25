@@ -3,11 +3,11 @@ Copyright: Public Domain
 Authors: Hazel Atkinson
 License: $(LINK2 https://unlicense.org, Unlicense)
 +/
-module ysbase.list;
+module ysbase.containers.list;
 
 import ysbase.allocation : reallocate, stateSize, theAllocator, expandArray, shrinkArray, makeArray, dispose;
 
-import std.traits : isInstanceOf;
+import std.traits : isInstanceOf, hasElaborateDestructor;
 
 import std.range : isInputRange, ElementType;
 
@@ -37,7 +37,7 @@ $(UL
 	$(LI Both of these problems are easily solved by using `l[]`, which is very cheap and is a random-access range.)
 )
 
-$(SRCL ysbase/list.d)
+$(SRCL ysbase/containers/list.d)
 
 Params:
 	T_ = The type of the list elements
@@ -48,10 +48,20 @@ struct List(T_, TAlloc = void)
 // #region traits
 public:
 
+	version (D_Ddoc)
+	{
+		/// Does this list use `theAllocator`? (`TAlloc == void`)
+		static bool allocatorIsDefault;
+
+		/// If this allocator is not `theAllocator`, does it have any state (is an instance held within the list)?
+		static bool allocatorIsStateful;
+	}
+
 	enum allocatorIsDefault = is(TAlloc == void);
 
 	enum allocatorIsStateful = !allocatorIsDefault && stateSize!TAlloc != 0;
 
+	/// The element type of the list
 	alias T = T_;
 
 // #endregion
@@ -185,7 +195,7 @@ public:
 
 // #endregion
 
-// #region slicing operators
+// #region slicing operators and `in`
 
 	/// Unary slice `[]` operator
 	T[] opIndex() => _store[0 .. _length];
@@ -215,23 +225,35 @@ public:
 
 
 	/// Index Op Assign (e.g. `v[n] += 5`) operator
+	// this is implemented purely because opIndexOpAssign has to exist for slice op assign
+	// and because it exists, the impl using ref for indexing fails, so we have to provide an indexed version.
 	void opIndexOpAssign(string op, T)(auto ref T rhs, size_t i)
 	{
-		mixin("this[i] " ~ op ~ "= rhs;");
+		mixin("_store[i] " ~ op ~ "= rhs;");
 	}
 
-	/// Slice Op Assign (e.g. `v[i..j] += 5`) operator
+	/// Slice Op Assign (e.g. `v[i..j] += 5`, `v[] -= 2`) operator
 	void opIndexOpAssign(string op, T)(auto ref T rhs, T[] slice = this[])
 	{
 		foreach (ref val; slice)
 			mixin("val " ~ op ~ "= rhs;");
 	}
 
-	/// Slice Unary operators (e.g. `++v[]`)
+	/// Slice and Index Unary operators (e.g. `++v[n]`, `++v[i..j]`, `++v[]`)
 	void opIndexUnary(string op)(T[] slice = this[])
 	{
 		foreach (ref val; slice)
 			mixin(op ~ "val;");
+	}
+
+	/// The `in` keyword, which checks if there exists a value that `== lhs`
+	T* opBinaryRight(string op: "in", L)(auto ref const L lhs) const
+	{
+		foreach (ref v; this)
+			if (v == lhs)
+				return &v;
+
+		return null;
 	}
 
 // #endregion
@@ -263,6 +285,17 @@ public:
 		auto copy = this;
 		copy ~= value;
 		return move(copy);
+	}
+
+	/// Equality operator `==`
+	bool opBinary(string op: "==", R)(auto ref const R rhs) const if (isList!R && is(R.T == T))
+	{
+		if (rhs.length != length) return false;
+
+		foreach (ref value, i; this)
+			if (value != rhs[i]) return false;
+
+		return true;
 	}
 
 	/// In-place append operator `~=` for a range, appends the contents of the range `rhs` onto the end of this
@@ -332,13 +365,13 @@ public:
 
 	ref T front() @property => this[0];
 
-	ref T back() @property => this[$];
+	ref T back() @property => this[$ - 1];
 
 	void popFront()
 	{
 		if (empty) return;
 
-		// TODO
+		removeAt(0);
 	}
 
 	void popBack()
@@ -373,6 +406,80 @@ public:
 	/// Alias for `this = null;`
 	void clear() { this = null; }
 
+	/// Inserts `value` into the list such that it is then at `list[idx]`.
+	void insertAt()(size_t idx, auto ref T value)
+	{
+		import core.stdc.string : memmove;
+		import core.lifetime : moveEmplace;
+
+		// Can insert anywhere within the list (< length) or after the end (= length)
+		assert(idx <= length, "inserting at this idx would overflow");
+
+		// we can do it in our current backing, shift over and insert
+		if (freeSpace)
+		{
+			// blit right
+			_blitByOne!(false, false)(idx, (length - idx), value);
+
+			_length++;
+		}
+		else
+		{
+			// we're full; to avoid extra work, just allocate a new array and copy it
+
+			auto newSize = capacity + max(1, capacity / 2);
+
+			auto newArray = cast(T[]) _allocator.allocate(newSize * T.sizeof);
+
+			_blit(_store[i .. idx], newArray[i .. idx]);
+
+			moveEmplace(newArray[idx], value);
+
+			_blit(_store[idx .. length], newArray[idx + 1 .. length + 1]);
+
+			moveEmplace(newArray[idx], T.init); // use moveEmplace here as a simple `=` could do copy construction and BS
+
+			_allocator.deallocate(cast(void[]) _store);
+
+			_length++;
+			_store = newArray;
+		}
+	}
+
+	/// Constructs a new element in the middle of the list such that it is at `list[idx]`
+	void emplaceAt(A...)(size_t idx, auto ref A args)
+	{
+		// i'm sure there's a more efficient way to do this
+		insertAt(idx, T(args));
+	}
+
+	/// Removes the element at `idx` from the list.
+	void removeAt(size_t idx)
+	{
+		import core.lifetime : move, moveEmplace;
+
+		assert(idx < length, "Cannot remove an element at an index past the end of the list");
+
+		// fast path for the last element
+		if (idx + 1 == length)
+			_store[idx] = T.init;
+		else
+			// blit the elements left.
+			_blitByOne!true(idx, (length - idx));
+
+		_length--;
+	}
+
+	/// Moves an element out of `this[idx]`. Equivalent to a simple `move(list[idx])`.
+	T moveFrom(size_t idx)
+	{
+		import core.lifetime : move;
+
+		assert(idx < length, "index out of range");
+
+		return move(this[idx]);
+	}
+
 	// TODO: so many missing APIs lol
 
 // #endregion
@@ -388,7 +495,7 @@ public:
 		_autoGrow(neededGrowth);
 	}
 
-	/// Grows the total capacity to at least `cap`. Note that `reserve` is relative and `growsCapacityTo` is absolute.
+	/// Grows the total capacity to at least `cap`. Note that `reserve` is relative and `growCapacityTo` is absolute.
 	void growCapacityTo(size_t cap)
 	{
 		if (cap > capacity)
@@ -399,15 +506,106 @@ public:
 	// this is it, this is the one slightly goofy function name I'm giving myself for this module -- Hazel
 	void shrinkwrap()
 	{
-		// uses allocator's native reallocate(), or failing that, ysbase.allocation.reallocate(_allocator). thanks UFCS!
+		import ysbase.allocation : shrinkArray;
+
 		if (freeSpace)
-			_allocator.reallocate(_store, _length);
+			_allocator.shrinkArray(_store, freeSpace);
 	}
 
 // #endregion
 
 // #region internals
 private:
+
+	// blits a range to the left or to the right by one, as efficiently as possible.
+	// moves `fillWith` into the newly opened space, and if `destructTarget`, calls the destructor on the lost element
+	// else it just assumes its uninitialized and blits over it.
+	void _blitByOne(bool moveLeft = false, bool destructTarget = true)(size_t idx, size_t len, auto ref T fill = T.init)
+	{
+		import core.stdc.string : memmove;
+		import core.lifetime : moveEmplace;
+
+		static if (moveLeft)
+			assert(idx > 0, "blit out of range");
+		else
+			assert(idx + len);
+
+		enum dx = moveLeft ? -1 : 1;
+
+		static if (moveLeft)
+		{
+			auto targetEIdx = idx - 1;
+			auto fillEIdx = idx + len - 1;
+		}
+		else
+		{
+			auto targetEIdx = idx + len;
+			auto fillEIdx = idx;
+		}
+
+		// first, destruct the target element
+		static if (hasElaborateDestructor!T && destructTarget)
+			destroy!false(_store[targetEIdx]);
+
+		// then, blit the array over
+		_blit(_store[idx .. idx + len], _store[idx + dx .. idx + dx + len]);
+
+		// finally, the newly opened element
+		moveEmplace(_store[fillEIdx], fill);
+	}
+
+	// correctly calls opPostMove but does not call destructors for overwritten types nor re-initialize src.
+	void _blit(T)(T[] src, T[] dest)
+	{
+		import core.stdc.string : memmove, memcpy;
+		import std.traits : hasElaborateMove;
+
+		auto dvoid = cast(void[]) dest;
+		auto svoid = cast(void[]) src;
+
+		assert(src.length == dest.length);
+
+		static if (!hasElaborateMove!T)
+			memmove(dvoid.ptr, svoid.ptr, svoid.length);
+		else
+		{
+			// no overlap, can do a fast memcpy
+			if ((dvoid.ptr + dvoid.length < svoid.ptr) || (svoid.ptr + svoid.length < dvoid.ptr))
+			{
+				memcpy(dvoid.ptr, svoid.ptr, svoid.length);
+
+				// call opPostMove
+				foreach (ref value, i; dest)
+					value.opPostMove(src[i]);
+			}
+
+			// implement a memmove ourselves
+			if (dvoid.ptr > svoid.ptr)
+			{
+				// we're moving forwards in memory, so move the back before the front
+				for (ptrdiff_t i = src.length; i >= 0; i--)
+				{
+					auto b = i * T.sizeof;
+					// blit
+					*(cast(ubyte[T.sizeof]*) (dvoid.ptr + b)) = *(cast(ubyte[T.sizeof]*) (svoid.ptr + b));
+					// postmove
+					dest[i].opPostMove(src[i]);
+				}
+			}
+			else
+			{
+				// moving backwards in memory, move from the front first
+				for (ptrdiff_t i = 0; i < src.length; i++)
+				{
+					auto b = i * T.sizeof;
+					// blit
+					*(cast(ubyte[T.sizeof]*) (dvoid + b)) = *(cast(ubyte[T.sizeof]*) (svoid + b));
+					// postmove
+					dest[i].opPostMove(src[i]);
+				}
+			}
+		}
+	}
 
 	bool _growBacking(size_t delta)
 	{
