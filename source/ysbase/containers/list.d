@@ -190,7 +190,10 @@ public:
 
 // #endregion
 
-// #region slicing operators and `in`
+// #region slicing operators, `in`, at
+
+	/// Equivalent to `this[n]`, except negative indices are interpreted as relative to the array end (`at(-1) == back`).
+	ref T at(ptrdiff_t n) => n > 0 ? this[n] : this[$ + n];
 
 	/// Unary slice `[]` operator
 	T[] opIndex() => _store[0 .. _length];
@@ -471,7 +474,18 @@ public:
 		return move(this[idx]);
 	}
 
-	// TODO: so many missing APIs lol
+	/// Reverses the elements in the given range. If `end` is negative, it is relative to the list end.
+	void reverse(size_t start = 0, ptrdiff_t end = -1)
+	{
+		import std.algorithm : swap;
+
+		if (end < 0) end += length;
+		assert(end > 0);
+		assert(end > start);
+
+		for (size_t i1 = start, i2 = end; end - start > 1; i1++, i2--)
+			swap(_store[i1], _store[i2]);
+	}
 
 // #endregion
 
