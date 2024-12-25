@@ -42,8 +42,9 @@ $(SRCL ysbase/containers/list.d)
 Params:
 	T_ = The type of the list elements
 	TAlloc = The type of the allocator. If `void`, then `theAllocator` is used instead of any local instance.
+	BoundsChecks = Should bounds checks always be performed, or only in debug builds?
 +/
-struct List(T_, TAlloc = void)
+struct List(T_, TAlloc = void, bool BoundsChecks = true)
 {
 // #region traits
 public:
@@ -193,24 +194,19 @@ public:
 // #region slicing operators, `in`, at
 
 	/// Equivalent to `this[n]`, except negative indices are interpreted as relative to the array end (`at(-1) == back`).
-	ref T at(ptrdiff_t n) => n > 0 ? this[n] : this[$ + n];
+	ref T at(ptrdiff_t n) => _store[_wrapAndCheck(n)];
 
 	/// Unary slice `[]` operator
 	T[] opIndex() => _store[0 .. _length];
 
 	/// Index `[n]` operator (`ref`, so provides get, set, and indexUnary)
-	ref T opIndex(size_t i)
-	{
-		assert(i < _length, "overflow");
-
-		return _store[i];
-	}
+	ref T opIndex(size_t i) => _store[_boundsCheck(i)];
 
 	/// Slice `[i .. j]` operator
 	T[] opSlice(size_t dim: 0)(size_t i, size_t j)
 	{
-		assert(i < j, "start of slice cannot be after the end of the slice");
-		assert(j < _length, "overflow");
+		_enforce(i < j, "start of slice cannot be after the end of the slice");
+		_boundsCheck(j);
 		return _store[i .. j];
 	}
 
@@ -221,12 +217,12 @@ public:
 	/// `$` operator in slices
 	size_t opDollar(size_t dim: 0)() => _length;
 
-
 	/// Index Op Assign (e.g. `v[n] += 5`) operator
 	// this is implemented purely because opIndexOpAssign has to exist for slice op assign
 	// and because it exists, the impl using ref for indexing fails, so we have to provide an indexed version.
 	void opIndexOpAssign(string op, T)(auto ref T rhs, size_t i)
 	{
+		_boundsCheck(i);
 		mixin("_store[i] " ~ op ~ "= rhs;");
 	}
 
@@ -352,7 +348,6 @@ public:
 
 // #endregion
 
-
 // #region front, back, popFront, popBack
 	// implements the range interface
 
@@ -415,7 +410,7 @@ public:
 		// bounds check
 		auto rangLen = range.length;
 
-		assert(idx <= length, "index must be inside of the list");
+		_boundsCheck(idx);
 
 		// a reserve then a blit is very inefficient but i'll make it better later.
 		reserve(rangLen);
@@ -450,7 +445,8 @@ public:
 	/// Removes `n` elements from `idx` from the list.
 	void removeAt(size_t idx, size_t n = 1)
 	{
-		assert(idx < length, "Cannot remove an element at an index past the end of the list");
+		_boundsCheck(idx);
+		_boundsCheck(idx + n);
 
 		if (n == 0) return;
 
@@ -462,29 +458,6 @@ public:
 			_blitStoreBy(-n, idx + n, (length - idx - n));
 
 		_length -= n;
-	}
-
-	/// Moves an element out of `this[idx]`. Equivalent to a simple `move(list[idx])`.
-	T moveFrom(size_t idx)
-	{
-		import core.lifetime : move;
-
-		assert(idx < length, "index out of range");
-
-		return move(this[idx]);
-	}
-
-	/// Reverses the elements in the given range. If `end` is negative, it is relative to the list end.
-	void reverse(size_t start = 0, ptrdiff_t end = -1)
-	{
-		import std.algorithm : swap;
-
-		if (end < 0) end += length;
-		assert(end > 0);
-		assert(end > start);
-
-		for (size_t i1 = start, i2 = end; end - start > 1; i1++, i2--)
-			swap(_store[i1], _store[i2]);
 	}
 
 // #endregion
@@ -521,6 +494,36 @@ public:
 
 // #region internals
 private:
+
+	void _enforce(T)(T value, lazy string msg)
+	{
+		import std.exception : enforce;
+
+		static if (BoundsChecks)
+			enforce(value, msg);
+		else
+			assert(value, msg);
+	}
+
+	size_t _boundsCheck(ptrdiff_t idx, T[] range = this[])
+	{
+		_enforce(idx >= 0, "index out of range");
+		_enforce(idx < length, "index out of range");
+
+		auto addr = &_store[idx];
+
+		_enforce(&range[0] < addr && addr < &range[$ - 1], "index out of range");
+
+		return idx;
+	}
+
+	size_t _wrapAndCheck(ptrdiff_t idx)
+	{
+		if (idx < 0)
+		idx += length;
+
+		return _boundsCheck(idx);
+	}
 
 	// blits a range to the left or to the right by `dx`, as efficiently as possible.
 	// If `destructTarget`, calls the destructor on the lost elements else it just assumes uninit and blits over it.
