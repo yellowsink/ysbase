@@ -635,6 +635,7 @@ private:
 // #endregion
 }
 
+/// Is `T` a `List`?
 enum isList(T) = isInstanceOf!(List, T);
 
 unittest
