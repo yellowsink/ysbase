@@ -213,7 +213,8 @@ public:
 	T[] opSlice(size_t dim: 0)(size_t i, size_t j)
 	{
 		_enforce(i < j, "start of slice cannot be after the end of the slice");
-		_boundsCheck(j);
+		// slices point 1 past the end of the array
+		_boundsCheck(j - 1);
 		return _store[i .. j];
 	}
 
@@ -234,21 +235,38 @@ public:
 	}
 
 	/// Slice Op Assign (e.g. `v[i..j] += 5`, `v[] -= 2`) operator
-	void opIndexOpAssign(string op, T)(auto ref T rhs, T[] slice = this[])
+	// Has to exist because we overload slicing
+	void opIndexOpAssign(string op, T)(auto ref T rhs, T[] slice)
 	{
 		foreach (ref val; slice)
 			mixin("val " ~ op ~ "= rhs;");
 	}
 
+	/// ditto
+	void opIndexOpAssign(string op, T)(auto ref T rhs) => opIndexOpAssign!op(rhs, this[]);
+
 	/// Slice and Index Unary operators (e.g. `++v[n]`, `++v[i..j]`, `++v[]`)
-	void opIndexUnary(string op)(T[] slice = this[])
+	// also, has to exist because we overload slicing
+	void opIndexUnary(string op)(T[] slice)
 	{
 		foreach (ref val; slice)
 			mixin(op ~ "val;");
 	}
 
+	/// ditto
+	void opIndexUnary(string op)(size_t idx)
+	{
+		mixin(op ~ "_store[idx];");
+	}
+
+	/// ditto
+	void opIndexUnary(string op)()
+	{
+		opIndexUnary!op(this[]);
+	}
+
 	/// The `in` keyword, which checks if there exists a value that `== lhs`
-	T* opBinaryRight(string op: "in", L)(auto ref const L lhs) const
+	T* opBinaryRight(string op: "in", L)(auto ref const L lhs)
 	{
 		foreach (ref v; this)
 			if (v == lhs)
@@ -262,7 +280,7 @@ public:
 // #region append operators
 
 	/// Append operator `~` for a range, creates a copy of this list and appends the range `rhs`'s elements to it.
-	typeof(this) opBinary(string op: "~", R)(R rhs) if (isInputRange!T && is(T == ElementType!R))
+	typeof(this) opBinary(string op: "~", R)(R rhs) if (isInputRange!R && is(T == ElementType!R))
 	{
 		import core.lifetime : move;
 		import std.range : chain;
@@ -273,7 +291,7 @@ public:
 		static if (allocatorIsStateful)
 			newList._allocator = _allocator;
 
-		newList = chain(this, rhs);
+		newList = chain(this[], rhs);
 
 		return move(newList);
 	}
@@ -300,7 +318,7 @@ public:
 	}
 
 	/// In-place append operator `~=` for a range, appends the contents of the range `rhs` onto the end of this
-	void opOpAssign(string op: "~", R)(R rhs) if (isInputRange!T && is(T == ElementType!R))
+	void opOpAssign(string op: "~", R)(R rhs) if (isInputRange!R && is(T == ElementType!R))
 	{
 		static if (hasLength!R)
 			reserve(rhs.length);
@@ -331,8 +349,6 @@ public:
 
 	int opApply(scope int delegate(ref T) dg)
 	{
-		if (_store) return 0;
-
 		foreach (ref item; this[])
 		{
 			auto result = dg(item);
@@ -343,8 +359,6 @@ public:
 
 	int opApplyReverse(scope int delegate(ref T) dg)
 	{
-		if (_store) return 0;
-
 		foreach_reverse (ref item; this[])
 		{
 			auto result = dg(item);
@@ -373,7 +387,7 @@ public:
 	{
 		if (empty) return;
 
-		_store[_length--] = T.init;
+		_store[--_length] = T.init;
 	}
 
 // #endregion
@@ -432,14 +446,13 @@ public:
 		// blit over elements to make space
 		auto openedUpSpace = _blitStoreBy!false(rangLen, idx, length - idx);
 
-		assert(openedUpSpace == rangLen, "range to insert is not the same length as the opened up spaces");
+		assert(openedUpSpace.length == rangLen, "range to insert is not the same length as the opened up spaces");
 
 		size_t i;
 		foreach (ref value; range)
-			moveEmplace(openedUpSpace[i++], value);
+			moveEmplace(value, openedUpSpace[i++]);
 
-
-		length += rangLen;
+		_length += rangLen;
 	}
 
 	/// Constructs a new element in the middle of the list such that it is at `list[idx]`
@@ -513,14 +526,16 @@ private:
 			assert(value, msg);
 	}
 
-	size_t _boundsCheck(ptrdiff_t idx, T[] range = this[])
+	//size_t _boundsCheck(ptrdiff_t idx) => _boundsCheck(idx, this[]);
+
+	size_t _boundsCheck(ptrdiff_t idx/* , T[] range */)
 	{
 		_enforce(idx >= 0, "index out of range");
 		_enforce(idx < length, "index out of range");
 
-		auto addr = &_store[idx];
-
-		_enforce(&range[0] < addr && addr < &range[$ - 1], "index out of range");
+		// doesn't work
+		//auto addr = &_store[idx];
+		//_enforce(&range[0] < addr && addr < &range[$ - 1], "index out of range");
 
 		return idx;
 	}
@@ -538,9 +553,6 @@ private:
 	// Returns a slice to the elements that need initializing - the object will be in an invalid state until inited.
 	T[] _blitStoreBy(bool destructTarget = true)(ptrdiff_t dx, size_t idx, size_t len)
 	{
-		import core.stdc.string : memmove;
-		import core.lifetime : moveEmplace;
-
 		if (dx == 0) return [];
 
 		// lower bound
@@ -567,7 +579,7 @@ private:
 		// if we're moving left, these are the last dx of the array
 		return dx > 0
 			? _store[idx .. idx + dx]
-			: _store[idx + len - dx .. idx + len];
+			: _store[idx + len + dx .. idx + len];
 	}
 
 	// correctly calls opPostMove but does not call destructors for overwritten types nor re-initialize src.
@@ -643,16 +655,150 @@ private:
 // #endregion
 }
 
+///
 unittest
 {
-	List!int _instantiate;
-	auto copy = _instantiate;
+	List!int someIntegers = [1, 2, 3];
+
+	assert(someIntegers.length == 3);
+
+	someIntegers ~= [4, 5];
+	someIntegers ~= 6;
+
+	assert(someIntegers.length == 6);
+
+	assert(someIntegers[] == [1, 2, 3, 4, 5, 6]);
+
+	// replace the list content
+	someIntegers = [5, 3, 6];
+
+	assert(someIntegers.length == 3);
+
+	// slicing a list works exactly as expected
+	assert(someIntegers[2 .. $] == [6]);
+
+	// copying a list shallow-copies its content
+	auto moreIntegers = someIntegers;
+
+	assert(moreIntegers[] == someIntegers[]);
+
+	moreIntegers[2] = 5;
+
+	assert(moreIntegers[] != someIntegers[]);
+
+	// `at` allows negative indices relative to the back of the array
+	assert(moreIntegers.at(-2) == 3);
+
+	// clear the list
+	someIntegers = null;
+
+	assert(someIntegers.empty);
+	assert(someIntegers.capacity > 0, "assigning to a list uses the same backing store to reduce allocations");
 }
 
+/// Insert and remove elements from the list
 unittest
 {
-	List!int myList = [1, 2, 3];
+	List!int someIntegers = [1, 2, 3, 4, 5];
 
-	assert(myList.length == 3);
-	assert(myList[] == [1, 2, 3]);
+	// remove 3 from the list
+	someIntegers.removeAt(2);
+
+	assert(someIntegers[] == [1, 2, 4, 5]);
+
+	// insert 8 and 9 before 5
+	someIntegers.insertAt(3, [8, 9]);
+
+	assert(someIntegers[] == [1, 2, 4, 8, 9, 5]);
+
+	// remove 1 and 2, and insert 7 after 4
+	someIntegers.removeAt(0, 2);
+	someIntegers.insertAt(1, 7);
+
+	assert(someIntegers[] == [4, 7, 8, 9, 5]);
+}
+
+/// Capacity controls
+unittest
+{
+	List!int someInts = [1, 2, 3];
+
+	// make space for one more element
+	someInts.reserve(1);
+
+	assert(someInts.capacity >= 4);
+
+	// increase the capacity to at least 12
+	someInts.growCapacityTo(12);
+	assert(someInts.capacity >= 12);
+
+	// reduce the capacity to match the length
+	someInts.shrinkwrap();
+	assert(!someInts.freeSpace);
+}
+
+/// Emplace items in place
+unittest
+{
+	static struct HasBigConstructor { this(string a, int b, double c) {} }
+
+	List!HasBigConstructor list;
+
+	list.emplaceBack("hi!", 5, 4.7);
+
+	// create a few more items (default construction is valid too!)
+	list.emplaceBack();
+	list.emplaceBack();
+	list.emplaceBack();
+
+	// emplace one of them
+	list.emplaceAt(2, "hi", 4, 2.5);
+}
+
+/// Slice mutation operations
+unittest
+{
+	import std.range : iota;
+
+	List!int integers = iota(0, 20);
+
+	// increment all integers
+	++integers[];
+
+	assert(integers[0] == 1);
+
+	// multiply some of them by 5
+	integers[3 .. 7] *= 5;
+
+	// decrement the fifth item then divide by 2
+	--integers[4];
+	integers[4] /= 2;
+
+	assert(integers[4] == 12);
+
+	// find the first 20 in the list and change it to 42 using the `in` operator
+	if (auto ptr = 20 in integers)
+		*ptr = 42;
+	else
+		assert(false);
+
+	assert(!(7 in integers));
+}
+
+/// Appending to a new list
+unittest
+{
+	List!int leftSide = [1, 2, 3];
+
+	auto with67 = leftSide ~ [6, 7];
+
+	auto with9 = with67 ~ 9;
+
+	// all are different instances
+	assert(leftSide[].ptr != with67[].ptr);
+	assert(with67[].ptr != with9[].ptr);
+
+	assert(leftSide[] == [1, 2, 3]);
+	assert(with67[] == [1, 2, 3, 6, 7]);
+	assert(with9[] == [1, 2, 3, 6, 7, 9]);
 }
