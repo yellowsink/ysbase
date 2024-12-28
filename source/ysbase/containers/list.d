@@ -13,6 +13,9 @@ import std.range : isInputRange, ElementType, hasLength;
 
 import std.algorithm : max;
 
+/// Is `T` a `List`?
+enum isList(T) = isInstanceOf!(List, T);
+
 /++
 A List is a contiguous collection of elements like an array, that can grow and shrink.
 Their elements are just as efficient to access as arrays.
@@ -36,6 +39,10 @@ $(UL
 	$(LI `popFront` on a List mutates the list and is very expensive!)
 	$(LI Both of these problems are easily solved by using `l[]`, which is very cheap and is a random-access range.)
 )
+
+Note that `List` purposefully excludes some functions that might otherwise make sense, as they are trivial to implement
+with provided methods, for example there is no `moveFrom(idx)`, as `move(list[idx])` works just fine,
+and similarly there is no `.ptr`, as, while `&list[0]` will work only for non-empty lists, `list[].ptr` always works.
 
 $(SRCL ysbase/containers/list.d)
 
@@ -495,6 +502,7 @@ public:
 // #region internals
 private:
 
+	pragma(inline, true)
 	void _enforce(T)(T value, lazy string msg)
 	{
 		import std.exception : enforce;
@@ -520,7 +528,7 @@ private:
 	size_t _wrapAndCheck(ptrdiff_t idx)
 	{
 		if (idx < 0)
-		idx += length;
+			idx += length;
 
 		return _boundsCheck(idx);
 	}
@@ -634,9 +642,6 @@ private:
 	}
 // #endregion
 }
-
-/// Is `T` a `List`?
-enum isList(T) = isInstanceOf!(List, T);
 
 unittest
 {
