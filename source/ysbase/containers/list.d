@@ -373,6 +373,12 @@ public:
 // #region efficient foreach implementation
 	// without this, it would remove pop elements from the front of this list repeatedly, which is really not good.
 
+	// if the delegate is safe, then the function below is safe, else it isn't
+	int opApply(scope int delegate(ref T) @safe dg) @trusted
+	{
+		return opApply(cast(int delegate(ref T)) dg);
+	}
+
 	int opApply(scope int delegate(ref T) dg)
 	{
 		foreach (ref item; this[])
@@ -381,6 +387,11 @@ public:
 			if (result) return result;
 		}
 		return 0;
+	}
+
+	int opApplyReverse(scope int delegate(ref T) @safe dg) @trusted
+	{
+		return opApplyReverse(cast(int delegate(ref T)) dg);
 	}
 
 	int opApplyReverse(scope int delegate(ref T) dg)
@@ -828,4 +839,32 @@ unittest
 	assert(leftSide[] == [1, 2, 3]);
 	assert(with67[] == [1, 2, 3, 6, 7]);
 	assert(with9[] == [1, 2, 3, 6, 7, 9]);
+}
+
+/// @safe iteration
+unittest
+{
+	List!int myList = [1, 2, 3];
+
+	foreach (integer; myList)
+	{
+		int x;
+		int* y = &x; // do something unsafe
+	}
+
+	// but we can't in an @safe context:
+	assert(!__traits(compiles,
+		() @safe {
+			foreach (integer; myList)
+			{
+				int x;
+				int* y = &x;
+			}
+		}
+	));
+
+	() @safe {
+		// but we can have @safe foreach bodies
+		foreach (integer; myList) {}
+	}();
 }
