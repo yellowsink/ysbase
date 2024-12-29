@@ -104,13 +104,13 @@ public:
 	/// Construct a list out of another list (or range), with a provided allocator instance.
 	/// Requires the allocator to be stateful and non-default.
 	static if (allocatorIsStateful)
-	this(R)(auto scope ref R rhs, TAlloc alloc) if (isInputRange!R)
+	this(R)(auto scope ref R rhs, TAlloc alloc) if (isInputRange!R && is(T == ElementType!R))
 	{
 		_allocator = alloc;
 		this = rhs;
 	}
 
-	/// Construct a list out of another list.
+	/// Construct a list out of another list or range.
 	/// If the allocator is stateful, non-default and `rhs` is a list with the same allocator type,
 	/// this will copy `rhs`'s allocator, else it will use a default-constructed allocator.
 	///
@@ -130,7 +130,7 @@ public:
 		static if (allocatorIsStateful)
 			_allocator = rhs.allocator;
 
-		this = rhs;
+		this = rhs[];
 	}
 
 	/// Clear this list
@@ -182,35 +182,35 @@ public:
 // #region getter properties
 
 	/// The number of elements in the list. Part of the range interface
-	size_t length() @property => _length;
+	size_t length() const @property => _length;
 
 	/// The number of elements this list can hold without resizing (the size of the current backing array).
-	size_t capacity() @property => _store.length;
+	size_t capacity() const @property => _store.length;
 
 	/// The number of extra elements this list could hold without resizing.
-	size_t freeSpace() @property => capacity - length;
+	size_t freeSpace() const @property => capacity - length;
 
 	/// Is this list empty? Part of the range interface.
-	bool empty() @property => !_length;
+	bool empty() const @property => !_length;
 
 	/// The allocator in use
-	ref auto allocator() @property => _allocator;
+	ref auto allocator() const @property => _allocator;
 
 // #endregion
 
 // #region slicing operators, `in`, at
 
 	/// Equivalent to `this[n]`, except negative indices are interpreted as relative to the array end (`at(-1) == back`).
-	ref T at(ptrdiff_t n) => _store[_wrapAndCheck(n)];
+	ref inout(T) at(ptrdiff_t n) inout => _store[_wrapAndCheck(n)];
 
 	/// Unary slice `[]` operator
-	T[] opIndex() => _store[0 .. _length];
+	inout(T)[] opIndex() inout => _store[0 .. _length];
 
 	/// Index `[n]` operator (`ref`, so provides get, set, and indexUnary)
-	ref T opIndex(size_t i) => _store[_boundsCheck(i)];
+	ref inout(T) opIndex(size_t i) inout => _store[_boundsCheck(i)];
 
 	/// Slice `[i .. j]` operator
-	T[] opSlice(size_t dim: 0)(size_t i, size_t j)
+	inout(T)[] opSlice(size_t dim: 0)(size_t i, size_t j) inout
 	{
 		_enforce(i < j, "start of slice cannot be after the end of the slice");
 		// slices point 1 past the end of the array
@@ -220,10 +220,10 @@ public:
 
 	// part of the slice operator implementation
 	// https://dlang.org/spec/operatoroverloading.html#slice
-	T[] opIndex(T[] slice) => slice;
+	inout(T)[] opIndex(inout(T)[] slice) => slice;
 
 	/// `$` operator in slices
-	size_t opDollar(size_t dim: 0)() => _length;
+	size_t opDollar(size_t dim: 0)() const => _length;
 
 	/// Index Op Assign (e.g. `v[n] += 5`) operator
 	// this is implemented purely because opIndexOpAssign has to exist for slice op assign
@@ -307,11 +307,11 @@ public:
 	}
 
 	/// Equality operator `==`
-	bool opBinary(string op: "==", R)(auto ref const R rhs) const if (isList!R && is(R.T == T))
+	bool opEquals(R)(auto ref const R rhs) const if (isList!R && is(R.T == T))
 	{
 		if (rhs.length != length) return false;
 
-		foreach (ref value, i; this)
+		foreach (i, ref value; this[])
 			if (value != rhs[i]) return false;
 
 		return true;
@@ -372,9 +372,9 @@ public:
 // #region front, back, popFront, popBack
 	// implements the range interface
 
-	ref T front() @property => this[0];
+	ref inout(T) front() inout @property => this[0];
 
-	ref T back() @property => this[$ - 1];
+	ref inout(T) back() inout @property => this[$ - 1];
 
 	void popFront()
 	{
@@ -403,13 +403,15 @@ public:
 	/// Constructs a new element at the end of this array.
 	void emplaceBack(A...)(auto ref A args)
 	{
+		import core.lifetime : forward;
+
 		reserve(1);
 
 		// for non-class types, there is no () constructor, and we keep the unused capacity default-inited at all times.
 		static if (A.length == 0 && !is(T == class) && !is(T == interface))
 			_length++;
 		else
-			_store[_length++] = T(args);
+			_store[_length++] = T(forward!args);
 	}
 
 	/// Alias for `this = null;`
@@ -455,11 +457,13 @@ public:
 		_length += rangLen;
 	}
 
-	/// Constructs a new element in the middle of the list such that it is at `list[idx]`
+	/// Constructs a new element in the middle of the lTist such that it is at `list[idx]`
 	void emplaceAt(A...)(size_t idx, auto ref A args)
 	{
+		import core.lifetime : forward;
+
 		// i'm sure there's a more efficient way to do this
-		insertAt(idx, T(args));
+		insertAt(idx, T(forward!args));
 	}
 
 	/// Removes `n` elements from `idx` from the list.
@@ -516,7 +520,7 @@ public:
 private:
 
 	pragma(inline, true)
-	void _enforce(T)(T value, lazy string msg)
+	static void _enforce(T)(const T value, lazy string msg)
 	{
 		import std.exception : enforce;
 
@@ -528,7 +532,7 @@ private:
 
 	//size_t _boundsCheck(ptrdiff_t idx) => _boundsCheck(idx, this[]);
 
-	size_t _boundsCheck(ptrdiff_t idx/* , T[] range */)
+	size_t _boundsCheck(ptrdiff_t idx/* , T[] range */) const
 	{
 		_enforce(idx >= 0, "index out of range");
 		_enforce(idx < length, "index out of range");
@@ -540,7 +544,7 @@ private:
 		return idx;
 	}
 
-	size_t _wrapAndCheck(ptrdiff_t idx)
+	size_t _wrapAndCheck(ptrdiff_t idx) const
 	{
 		if (idx < 0)
 			idx += length;
@@ -680,11 +684,11 @@ unittest
 	// copying a list shallow-copies its content
 	auto moreIntegers = someIntegers;
 
-	assert(moreIntegers[] == someIntegers[]);
+	assert(moreIntegers == someIntegers);
 
 	moreIntegers[2] = 5;
 
-	assert(moreIntegers[] != someIntegers[]);
+	assert(moreIntegers != someIntegers);
 
 	// `at` allows negative indices relative to the back of the array
 	assert(moreIntegers.at(-2) == 3);
