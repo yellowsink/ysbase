@@ -44,8 +44,8 @@ Note that `List` purposefully excludes some functions that might otherwise make 
 with provided methods, for example there is no `moveFrom(idx)`, as `move(list[idx])` works just fine,
 and similarly there is no `.ptr`, as, while `&list[0]` will work only for non-empty lists, `list[].ptr` always works.
 
-Q: Why is barely any of List `@safe`?
-A: List allows you to take references to the elements within it, and therefore any methods which mutate the list such
+Why is barely any of List `@safe`?:
+List allows you to take references to the elements within it, and therefore any methods which mutate the list such
 that they could invalidate those references are unsafe as they can create dangling pointers.
 
 $(SRCL ysbase/containers/list.d)
@@ -374,11 +374,13 @@ public:
 	// without this, it would remove pop elements from the front of this list repeatedly, which is really not good.
 
 	// if the delegate is safe, then the function below is safe, else it isn't
+	/// Implements efficient `foreach`
 	int opApply(scope int delegate(ref T) @safe dg) @trusted
 	{
 		return opApply(cast(int delegate(ref T)) dg);
 	}
 
+	/// ditto
 	int opApply(scope int delegate(ref T) dg)
 	{
 		foreach (ref item; this[])
@@ -389,11 +391,13 @@ public:
 		return 0;
 	}
 
+	/// Implements effecient `foreach_reverse`
 	int opApplyReverse(scope int delegate(ref T) @safe dg) @trusted
 	{
 		return opApplyReverse(cast(int delegate(ref T)) dg);
 	}
 
+	/// ditto
 	int opApplyReverse(scope int delegate(ref T) dg)
 	{
 		foreach_reverse (ref item; this[])

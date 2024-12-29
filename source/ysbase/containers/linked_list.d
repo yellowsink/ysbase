@@ -24,11 +24,14 @@ A LinkedList is a $(LINK2 https://en.wikipedia.org/wiki/Doubly_linked_list, doub
 LinkedLists do not have reference semantics, and copying one will copy the entire contents of the list.
 You can achieve reference semantics with $(D $(LINK2 ../../rc_struct/RcStruct.html, RcStruct)!LinkedList).
 
-LinkedLists implement $(LINK2 https://dlang.org/phobos/std_range_primitives.html#isRandomAccessRange, random access ranges),
-but note that iteration will modify the list in-place, and random access is slow, and therefore it is recommended to use
-a `LinkedList.Cursor` instead.
+LinkedLists implement almost implement
+$(LINK2 https://dlang.org/phobos/std_range_primitives.html#isBidirectionalRange, bidirectional ranges), but not the
+`save` method. They do implement input ranges.
+Range iteration will pop the head off the list in-place, and therefore it is recommended to use
+a `LinkedList.Range` for iteration instead, which implements a performant bidirectional range that does not mutate the
+list.
 
-LinkedLists provide an efficent implementation of `foreach` that does not mutate the list.
+LinkedLists do, however provide an efficent implementation of `foreach` that does not mutate the list.
 
 If you are not familar with linked lists, the TL;DR of their purpose over a normal `List` is:
 $(UL
@@ -116,7 +119,7 @@ public:
 	/// you could first define the list and then assign the list into it.
 	this(R)(auto scope ref R rhs) if (isInputRange!R && is(T == ElementType!R))
 	{
-		static if (allocatorIsStateful && isList!R && is(typeof(rhs.allocator == TAlloc)))
+		static if (allocatorIsStateful && isLinkedList!R && is(typeof(rhs.allocator == TAlloc)))
 			_allocator = rhs.allocator;
 
 		() @trusted { this = rhs; }();
@@ -313,18 +316,21 @@ public:
 	/// The allocator in use
 	ref auto allocator() inout @property @safe => _allocator;
 
+	/// The first element of the list
 	ref inout(T) front() inout @property @safe
 	{
 		enforce(_head, "Cannot get the front of an empty linked list");
 		return _head.item;
 	}
 
+	/// The last element of the list
 	ref inout(T) back() inout @property @safe
 	{
 		enforce(_tail, "Cannot get the back of an empty linked list");
 		return _tail.item;
 	}
 
+	/// Removes the first element from the list
 	void popFront()
 	{
 		auto curs = cursorToFront;
@@ -332,12 +338,16 @@ public:
 			curs.remove();
 	}
 
+	/// Removes the last element from the list
 	void popBack()
 	{
 		auto curs = cursorToBack;
 		if (curs.exists)
 			curs.remove();
 	}
+
+	/// Gets the `n`th element in the list. Slow. Negative values index from the end
+	ref T at(ptrdiff_t n) => cursorAt(n).value;
 
 // #endregion
 
@@ -434,6 +444,108 @@ public:
 		return true;
 	}
 
+	/// ditto
+	// necessary because the default tohash just hashes the struct bits, but to work as an AA key, the rule is that
+	// if two objects are equal, they MUST have the same hash, else its undefined behaviour,
+	// so we must actually hash the list contents ourselves.
+	size_t toHash()
+	{
+		import std.traits : hasMember;
+		import ysbase : transmute;
+
+		size_t h;
+
+		foreach (ref value; this)
+		{
+			static if (hasMember!(T, "toHash"))
+				h ^= value.toHash();
+			else static if (is(T == class) || is(T == interface))
+				h ^= cast(size_t)(cast(void*) T);
+			else
+				foreach (byte_; (()@trusted => value.transmute!(ubyte[T.sizeof]))())
+					h ^= byte_;
+		}
+
+		return h;
+	}
+
+// #endregion
+
+// #region foreach, iterator
+
+	/// Implements efficient `foreach`
+	int opApply(scope int delegate(ref T) dg)
+	{
+		auto curs = cursorToFront;
+
+		for (; curs.exists; curs = curs.next)
+		{
+			auto result = dg(curs.value);
+			if (result) return result;
+		}
+
+		return 0;
+	}
+
+	/// Implements efficient `foreach_reverse`
+	int opApplyReverse(scope int delegate(ref T) dg)
+	{
+		auto curs = cursorToBack;
+
+		for (; curs.exists; curs = curs.prev)
+		{
+			auto result = dg(curs.value);
+			if (result) return result;
+		}
+
+		return 0;
+	}
+
+	/// A bidirectional range over a Linked List
+	static struct Range
+	{
+		private Node* _f;
+		private Node* _b;
+
+		///
+		this(ref LinkedList!(T, TAlloc) ll)
+		{
+			_f = ll._head;
+			_b = ll._tail;
+		}
+
+		///
+		ref T front() @property => _f.item;
+
+		///
+		ref T back() @property => _b.item;
+
+		///
+		bool empty() @property const => _f is null || _b is null;
+
+		///
+		void popFront()
+		{
+			_f = _f.next;
+		}
+
+		///
+		void popBack()
+		{
+			_b = _b.next;
+		}
+
+		///
+		Range save() => this;
+	}
+
+	import std.range : isBidirectionalRange;
+	static assert(isBidirectionalRange!Range);
+
+	/// Gets an efficient to iterate bidirectional range over the linked list.
+	/// It is undefined behaviour for the range to outlive the list.
+	Range range() @property => Range(this);
+
 // #endregion
 
 // #region mutation methods
@@ -457,28 +569,12 @@ public:
 	/// Inserts `range` into the list at `idx`. Slow.
 	void insertAt(R)(size_t idx, auto ref R range) if (isInputRange!R && is(T == ElementType!R))
 	{
-		import core.lifetime : moveEmplace;
-
-		// fast path for the end of the list
-		if (idx == length)
-		{
-			this ~= range;
-			return;
-		}
-
-		// fast path for the start of the list
-		if (idx == 0)
-		{
-			this.pushFront(range);
-			return;
-		}
-
 		auto curs = cursorAt(idx);
 		foreach (ref v; range)
 			curs = curs.insertAfter(v);
 	}
 
-	/// Constructs a new element in the middle of the lTist such that it is at `list[idx]`
+	/// Constructs a new element in the middle of the lTist such that it is at `list[idx]`. Slow.
 	void emplaceAt(A...)(size_t idx, auto ref A args)
 	{
 		import core.lifetime : forward;
@@ -487,22 +583,16 @@ public:
 		insertAt(idx, T(forward!args));
 	}
 
-	/// Removes `n` elements from `idx` from the list.
+	/// Removes `n` elements from `idx` from the list. Slow.
 	void removeAt(size_t idx, size_t n = 1)
 	{
-		_boundsCheck(idx);
-		_boundsCheck(idx + n);
-
-		if (n == 0)
-			return;
-
-		// fast path for the last element
-		if (n == 1 && idx + 1 == length)
-			_store[idx] = T.init;
-		else // blit the elements left.
-			_blitStoreBy(-n, idx + n, (length - idx - n));
-
-		_length -= n;
+		auto curs = cursorAt(idx);
+		for (auto i = n + 1; i; i--)
+		{
+			enforce(curs.exists, "Ran out of elements to remove from the list");
+			curs.remove();
+			curs = curs.next;
+		}
 	}
 
 // #endregion
