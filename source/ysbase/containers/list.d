@@ -26,7 +26,7 @@ but this library multiplies its size by 1.5 when full,
 $(LINK2 https://github.com/facebook/folly/blob/main/folly/docs/FBVector.md#memory-handling, in line with `folly::fbvector`).
 
 Lists do not have reference semantics, and copying one will copy the entire contents of the list.
-You can achieve reference semantics with $(D $(LINK2 ../rc_struct/RcStruct.html, RcStruct)!List).
+You can achieve reference semantics with $(D $(LINK2 ../../rc_struct/RcStruct.html, RcStruct)!List).
 
 Lists implement $(I most of) the API of a $(LINK2 https://dlang.org/phobos/std_range_primitives.html#isRandomAccessRange,
 random access range), minus the `save` method.
@@ -281,7 +281,7 @@ public:
 
 // #endregion
 
-// #region append operators
+// #region append operators, ==
 
 	/// Append operator `~` for a range, creates a copy of this list and appends the range `rhs`'s elements to it.
 	typeof(this) opBinary(string op: "~", R)(R rhs) @safe if (isInputRange!R && is(T == ElementType!R))
@@ -430,12 +430,6 @@ public:
 // #endregion
 
 // #region other mutation methods
-
-	/// Alias for `~=`
-	void pushBack()(auto ref T value)
-	{
-		this ~= value;
-	}
 
 	/// Constructs a new element at the end of this array.
 	void emplaceBack(A...)(auto ref A args)
