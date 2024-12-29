@@ -44,6 +44,10 @@ Note that `List` purposefully excludes some functions that might otherwise make 
 with provided methods, for example there is no `moveFrom(idx)`, as `move(list[idx])` works just fine,
 and similarly there is no `.ptr`, as, while `&list[0]` will work only for non-empty lists, `list[].ptr` always works.
 
+Q: Why is barely any of List `@safe`?
+A: List allows you to take references to the elements within it, and therefore any methods which mutate the list such
+that they could invalidate those references are unsafe as they can create dangling pointers.
+
 $(SRCL ysbase/containers/list.d)
 
 Params:
@@ -107,7 +111,7 @@ public:
 	this(R)(auto scope ref R rhs, TAlloc alloc) if (isInputRange!R && is(T == ElementType!R))
 	{
 		_allocator = alloc;
-		this = rhs;
+		() @trusted { this = rhs; }();
 	}
 
 	/// Construct a list out of another list or range.
@@ -121,7 +125,7 @@ public:
 		static if (allocatorIsStateful && isList!R && is(typeof(rhs.allocator == TAlloc)))
 			_allocator = rhs.allocator;
 
-		this = rhs;
+		() @trusted { this = rhs; }();
 	}
 
 	/// copy constructor
@@ -130,7 +134,7 @@ public:
 		static if (allocatorIsStateful)
 			_allocator = rhs.allocator;
 
-		this = rhs[];
+		() @trusted { this = rhs[]; }();
 	}
 
 	/// Clear this list
@@ -167,7 +171,7 @@ public:
 		_length = copiedLen;
 	}
 
-	~this()
+	~this() @trusted // its not really but otherwise *having a list* in @safe code is impossible
 	{
 		if (!_store)
 			return;
@@ -182,35 +186,35 @@ public:
 // #region getter properties
 
 	/// The number of elements in the list. Part of the range interface
-	size_t length() const @property => _length;
+	size_t length() const @property @safe => _length;
 
 	/// The number of elements this list can hold without resizing (the size of the current backing array).
-	size_t capacity() const @property => _store.length;
+	size_t capacity() const @property @safe => _store.length;
 
 	/// The number of extra elements this list could hold without resizing.
-	size_t freeSpace() const @property => capacity - length;
+	size_t freeSpace() const @property @safe => capacity - length;
 
 	/// Is this list empty? Part of the range interface.
-	bool empty() const @property => !_length;
+	bool empty() const @property @safe => !_length;
 
 	/// The allocator in use
-	ref auto allocator() const @property => _allocator;
+	ref auto allocator() const @property @safe => _allocator;
 
 // #endregion
 
 // #region slicing operators, `in`, at
 
 	/// Equivalent to `this[n]`, except negative indices are interpreted as relative to the array end (`at(-1) == back`).
-	ref inout(T) at(ptrdiff_t n) inout => _store[_wrapAndCheck(n)];
+	ref inout(T) at(ptrdiff_t n) inout @safe => _store[_wrapAndCheck(n)];
 
 	/// Unary slice `[]` operator
-	inout(T)[] opIndex() inout => _store[0 .. _length];
+	inout(T)[] opIndex() inout @safe => _store[0 .. _length];
 
 	/// Index `[n]` operator (`ref`, so provides get, set, and indexUnary)
-	ref inout(T) opIndex(size_t i) inout => _store[_boundsCheck(i)];
+	ref inout(T) opIndex(size_t i) inout @safe => _store[_boundsCheck(i)];
 
 	/// Slice `[i .. j]` operator
-	inout(T)[] opSlice(size_t dim: 0)(size_t i, size_t j) inout
+	inout(T)[] opSlice(size_t dim: 0)(size_t i, size_t j) inout @safe
 	{
 		_enforce(i < j, "start of slice cannot be after the end of the slice");
 		// slices point 1 past the end of the array
@@ -220,10 +224,10 @@ public:
 
 	// part of the slice operator implementation
 	// https://dlang.org/spec/operatoroverloading.html#slice
-	inout(T)[] opIndex(inout(T)[] slice) => slice;
+	inout(T)[] opIndex(inout(T)[] slice) @safe => slice;
 
 	/// `$` operator in slices
-	size_t opDollar(size_t dim: 0)() const => _length;
+	size_t opDollar(size_t dim: 0)() const @safe => _length;
 
 	/// Index Op Assign (e.g. `v[n] += 5`) operator
 	// this is implemented purely because opIndexOpAssign has to exist for slice op assign
@@ -266,11 +270,11 @@ public:
 	}
 
 	/// The `in` keyword, which checks if there exists a value that `== lhs`
-	T* opBinaryRight(string op: "in", L)(auto ref const L lhs)
+	T* opBinaryRight(string op: "in", L)(auto ref const L lhs) @safe
 	{
-		foreach (ref v; this)
+		foreach (i, ref v; this[])
 			if (v == lhs)
-				return &v;
+				return &this[i];
 
 		return null;
 	}
@@ -280,9 +284,8 @@ public:
 // #region append operators
 
 	/// Append operator `~` for a range, creates a copy of this list and appends the range `rhs`'s elements to it.
-	typeof(this) opBinary(string op: "~", R)(R rhs) if (isInputRange!R && is(T == ElementType!R))
+	typeof(this) opBinary(string op: "~", R)(R rhs) @safe if (isInputRange!R && is(T == ElementType!R))
 	{
-		import core.lifetime : move;
 		import std.range : chain;
 
 		// directly constructing from chain() doesn't copy the allocator.
@@ -291,23 +294,21 @@ public:
 		static if (allocatorIsStateful)
 			newList._allocator = _allocator;
 
-		newList = chain(this[], rhs);
+		() @trusted { newList = chain(this[], rhs); }();
 
-		return move(newList);
+		return newList; // nrvo should kick in here
 	}
 
 	/// Append operator `~` for an element, creates a copy of this list and appends the element to it.
-	typeof(this) opBinary(string op : "~")(auto ref T value)
+	typeof(this) opBinary(string op : "~")(auto ref T value) @safe
 	{
-		import core.lifetime : move;
-
 		auto copy = this;
-		copy ~= value;
-		return move(copy);
+		() @trusted { copy ~= value; }();
+		return copy;
 	}
 
 	/// Equality operator `==`
-	bool opEquals(R)(auto ref const R rhs) const if (isList!R && is(R.T == T))
+	bool opEquals(R)(auto ref const R rhs) const @safe if (isList!R && is(R.T == T))
 	{
 		if (rhs.length != length) return false;
 
@@ -397,9 +398,9 @@ public:
 // #region front, back, popFront, popBack
 	// implements the range interface
 
-	ref inout(T) front() inout @property => this[0];
+	ref inout(T) front() inout @property @safe => this[0];
 
-	ref inout(T) back() inout @property => this[$ - 1];
+	ref inout(T) back() inout @property @safe => this[$ - 1];
 
 	void popFront()
 	{
@@ -438,9 +439,6 @@ public:
 		else
 			_store[_length++] = T(forward!args);
 	}
-
-	/// Alias for `this = null;`
-	void clear() { this = null; }
 
 	/// Inserts `value` into the list such that it is then at `list[idx]`.
 	void insertAt()(size_t idx, auto ref T value)
@@ -545,7 +543,7 @@ public:
 private:
 
 	pragma(inline, true)
-	static void _enforce(T)(const T value, lazy string msg)
+	static void _enforce(T)(const T value, lazy string msg) @safe pure
 	{
 		import std.exception : enforce;
 
@@ -557,7 +555,7 @@ private:
 
 	//size_t _boundsCheck(ptrdiff_t idx) => _boundsCheck(idx, this[]);
 
-	size_t _boundsCheck(ptrdiff_t idx/* , T[] range */) const
+	size_t _boundsCheck(ptrdiff_t idx/* , T[] range */) const @safe pure
 	{
 		_enforce(idx >= 0, "index out of range");
 		_enforce(idx < length, "index out of range");
@@ -569,7 +567,7 @@ private:
 		return idx;
 	}
 
-	size_t _wrapAndCheck(ptrdiff_t idx) const
+	size_t _wrapAndCheck(ptrdiff_t idx) const @safe pure
 	{
 		if (idx < 0)
 			idx += length;
