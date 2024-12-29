@@ -108,7 +108,7 @@ public:
 	this(R)(auto scope ref R rhs, TAlloc alloc) if (isInputRange!R && is(T == ElementType!R))
 	{
 		_allocator = alloc;
-		() @trusted { this = rhs; }();
+		() @trusted { this ~= rhs; }();
 	}
 
 	/// Construct a list out of another list or range.
@@ -122,7 +122,7 @@ public:
 		static if (allocatorIsStateful && isLinkedList!R && is(typeof(rhs.allocator == TAlloc)))
 			_allocator = rhs.allocator;
 
-		() @trusted { this = rhs; }();
+		() @trusted { this ~= rhs; }();
 	}
 
 	/// copy constructor
@@ -131,7 +131,7 @@ public:
 		static if (allocatorIsStateful)
 			_allocator = rhs.allocator;
 
-		() @trusted { this = rhs; }();
+		() @trusted { this ~= rhs; }();
 	}
 
 	/// Clear this list
@@ -293,7 +293,7 @@ public:
 		}
 		else
 		{
-			i = -i;
+			i = -i - 1;
 			for (; i; curs = curs.prev, i--)
 				enf();
 		}
@@ -368,17 +368,17 @@ public:
 	}
 
 	/// ditto
-	alias pushBack() = opOpAssign!"~";
+	//alias pushBack() = opOpAssign!"~";
 
 	/// In-place append operator `~=` for a range, appends the contents of the range `rhs` onto the end of this
-	void opOpAssign(string op : "~", R)(R rhs) if (isInputRange!R && is(T == ElementType!R))
+	void opOpAssign(string op : "~", R)(auto ref R rhs) if (isInputRange!R && is(T == ElementType!R))
 	{
 		foreach (ref v; rhs)
 			this ~= v;
 	}
 
 	/// ditto
-	alias pushBack(R) = opOpAssign!("~", R);
+	//alias pushBack(R) = opOpAssign!("~", R);
 
 	/// Pushes `value` onto the front of the list in-place.
 	void pushFront()(auto ref T value)
@@ -424,7 +424,7 @@ public:
 	}
 
 	/// Equality operator `==`
-	bool opEquals(R)(auto ref const R rhs) const @safe if (isLinkedList!R && is(R.T == T))
+	bool opEquals(R)(auto ref R rhs) @safe if (isLinkedList!R && is(R.T == T))
 	{
 		auto ourCurs = cursorToFront;
 		auto theirCurs = rhs.cursorToFront;
@@ -442,6 +442,25 @@ public:
 		}
 
 		return true;
+	}
+
+	/// ditto
+	bool opEquals(R)(auto ref const R rhs) @safe if (!isLinkedList!R && isInputRange!R && is(ElementType!R == T))
+	{
+		auto ourCurs = cursorToFront;
+
+		foreach (ref value; rhs)
+		{
+			// we finished first!
+			if (!ourCurs.exists) return false;
+
+			if (ourCurs.value != value) return false;
+
+			ourCurs = ourCurs.next;
+		}
+
+		// must have the same lengths
+		return !ourCurs.exists;
 	}
 
 	/// ditto
@@ -532,7 +551,7 @@ public:
 		///
 		void popBack()
 		{
-			_b = _b.next;
+			_b = _b.prev;
 		}
 
 		///
@@ -612,7 +631,52 @@ public:
 	}
 }
 
+/// Using cursors to modify in the middle of a linked list, `foreach`
 unittest
 {
-	LinkedList!int myList;
+	LinkedList!int myList = [0, 1, 2, 3];
+
+	// get a cursor to the 2
+	auto cursor2 = myList.cursorAt(-2);
+
+	// add a 4 after it
+	auto cursor4 = cursor2.insertAfter(4);
+
+	// remove the one
+	cursor2.prev.remove();
+
+	// remove the two
+	cursor2.remove();
+
+	// increment all values
+	foreach (ref value; myList)
+		value++;
+
+	assert(myList == [1, 5, 4]);
+}
+
+/// linked lists have a `.range` property that allows efficient use as a range without mutating the list.
+unittest
+{
+	import std.range : cycle, retro, take;
+	import std.array : array;
+
+	LinkedList!int ll = [1, 2, 3, 4];
+
+	assert(array(ll.range.cycle.take(10)) == [1, 2, 3, 4, 1, 2, 3, 4, 1, 2]);
+	assert(array(ll.range.retro.cycle.take(5)) == [4, 3, 2, 1, 4]);
+}
+
+/// linked lists have value semantics
+unittest
+{
+	LinkedList!int a = [1, 2, 3];
+
+	auto b = a;
+
+	assert(a == b);
+
+	a.popFront();
+
+	assert(a != b);
 }
