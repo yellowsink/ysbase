@@ -317,6 +317,31 @@ public:
 		return true;
 	}
 
+	/// ditto
+	// necessary because the default tohash just hashes the struct bits, but to work as an AA key, the rule is that
+	// if two objects are equal, they MUST have the same hash, else its undefined behaviour,
+	// so we must actually hash the list contents ourselves.
+	size_t toHash() const @nogc @safe pure nothrow
+	{
+		import std.traits : hasMember;
+		import ysbase : transmute;
+
+		size_t h;
+
+		foreach (i, ref value; this[])
+		{
+			static if (hasMember!(T, "toHash"))
+				h ^= i.toHash();
+			else static if (is(T == class) || is(T == interface))
+				h ^= cast(size_t) (cast(void*) T);
+			else
+				foreach (byte_; (() @trusted => value.transmute!(ubyte[T.sizeof]))())
+					h ^= byte_;
+		}
+
+		return h;
+	}
+
 	/// In-place append operator `~=` for a range, appends the contents of the range `rhs` onto the end of this
 	void opOpAssign(string op: "~", R)(R rhs) if (isInputRange!R && is(T == ElementType!R))
 	{
