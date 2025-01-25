@@ -130,3 +130,22 @@ unittest
 	// fails to compile
 	// assert(transmute!int(ComplexCtors(10)) == 500);
 }
+
+/// Gets the hash code for an object. Calls `value.toHash` if it exists, else uses the class pointer, or hashes the struct value.
+/// Will fail if an object has `toHash` but does not define it to be `const @nogc @safe pure nothrow`.
+size_t getHashOf(T)(auto const ref T value) const @nogc @safe pure nothrow
+{
+	import std.traits : hasMember;
+
+	static if (hasMember!(T, "toHash"))
+		return value.toHash();
+	else static if (is(T == class) || is(T == interface))
+		return cast(size_t) (cast(void*) value);
+	else
+	{
+		// LDC can optimise this out beautifully https://godbolt.org/z/WfjnzEYhf (in the `ref` case it does lose tho)
+		import std.algorithm : fold;
+
+		return (()@trusted => value.transmute!(ubyte[T.sizeof]))().fold!((a, b) => a ^ b);
+	}
+}

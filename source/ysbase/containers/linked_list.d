@@ -469,21 +469,12 @@ public:
 	// so we must actually hash the list contents ourselves.
 	size_t toHash()
 	{
-		import std.traits : hasMember;
-		import ysbase : transmute;
+		import ysbase : getHashOf;
 
 		size_t h;
 
 		foreach (ref value; this)
-		{
-			static if (hasMember!(T, "toHash"))
-				h ^= value.toHash();
-			else static if (is(T == class) || is(T == interface))
-				h ^= cast(size_t)(cast(void*) T);
-			else
-				foreach (byte_; (()@trusted => value.transmute!(ubyte[T.sizeof]))())
-					h ^= byte_;
-		}
+			h ^= getHashOf(value);
 
 		return h;
 	}
