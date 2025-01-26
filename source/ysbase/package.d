@@ -133,7 +133,7 @@ unittest
 
 /// Gets the hash code for an object. Calls `value.toHash` if it exists, else uses the class pointer, or hashes the struct value.
 /// Will fail if an object has `toHash` but does not define it to be `const @nogc @safe pure nothrow`.
-size_t getHashOf(T)(auto const ref T value) const @nogc @safe pure nothrow
+size_t getHashOf(T)(auto const ref T value) @nogc @safe pure nothrow
 {
 	import std.traits : hasMember;
 
