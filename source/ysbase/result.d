@@ -61,27 +61,33 @@ struct OkWrap(T)
 /// Creates a value representing a success! Like `OkWrap` itself, exists to ease type deduction.
 OkWrap!T ok(T)(auto ref T v) => OkWrap(v);
 
-/++
-`Result` is the wrapper type containing either a success value of type `T` or failure of type `E`. See top level docs.
 
-The default initialization of a result (e.g. `Result!(T, E) res;`) is in the OK state with a default-initialized `T`.
+/*
+this is not supported for the moment, but leaving documentation here for future convenience:
 
 Always-okay results can be achieved by `Result!(T, void)`. Always-err results can be achieved by `Result!(void, E)`.
 Constructors and `=` operators will be removed as appropriate, but getter functions' signatures will not be changed.
 
 `Result!(void, void)` is not allowed, as then, e.g. `get` has no `T` to give, but also no `E` to give to `ResultException`.
+
+ */
+
+/++
+`Result` is the wrapper type containing either a success value of type `T` or failure of type `E`. See top level docs.
+
+The default initialization of a result (e.g. `Result!(T, E) res;`) is in the OK state with a default-initialized `T`.
 +/
-struct Result(T, E) if (!is(T == void) || !is(E == void))
+struct Result(T, E) if (!is(T == void) && !is(E == void))
 {
 	import core.lifetime : move;
 	import std.traits : isInstanceOf, isCallable, ReturnType;
-	import ysbase.nullable : Nullable;
+	import std.typecons : Nullable;
 
 	version (D_DDoc)
 	{
 		/// Will the error be wrapped in `ResultException` when thrown?
 		static bool ErrWillBeWrapped;
-
+/*
 		/// Is this result always OK, and never err? (This is the same concept as Rust's `std::convert::Infallible`)
 		static bool IsAlwaysOk;
 
@@ -89,16 +95,16 @@ struct Result(T, E) if (!is(T == void) || !is(E == void))
 		static bool IsAlwaysErr;
 
 		/// Is the OKness of this result statically known?
-		static bool IsFixedState;
+		static bool IsFixedState; */
 	}
 
 	enum ErrWillBeWrapped = !is(E : Exception);
 
-	enum IsAlwaysOk = is(E == void);
+/* 	enum IsAlwaysOk = is(E == void);
 
 	enum IsAlwaysErr = is(T == void);
 
-	enum IsFixedState = IsNeverErr || IsNeverOk;
+	enum IsFixedState = IsNeverErr || IsNeverOk; */
 
 @safe:
 
@@ -109,102 +115,83 @@ struct Result(T, E) if (!is(T == void) || !is(E == void))
 
 	private union Inner
 	{
-		static if (!IsNeverOk)
-			T val;
-
-		static if (!IsNeverErr)
-			E err;
+		T val;
+		E err;
 	}
 
 	// default the Result to a default-inited T, so _hasValue defaults to true
-	static if (!IsFixedState)
-		private bool _hasValue = true;
-	else static if (AlwaysOk)
+	//static if (!IsFixedState)
+	private bool _hasValue = true;
+	/* else static if (AlwaysOk)
 		private enum _hasValue = true;
 	else
-		private enum _hasValue = false;
+		private enum _hasValue = false; */
 
 	private Inner _value;
 
 	nothrow
 	{
 		// constructors for the OK case
-		static if (!IsAlwaysErr)
+		/// Direct constructor for the OK case
+		this(ref T val)
 		{
-			/// Direct constructor for the OK case
-			this(ref T val)
-			{
-				_value.val = move(val);
-			}
+			_value.val = move(val);
+		}
 
-			/// ditto
-			this(T val) { this(val); }
+		/// ditto
+		this(T val) { this(val); }
 
-			/// Promotes an `OkWrap` with no knowledge of the corresponding `E` type to a `Result`.
-			static if (!IsAlwaysErr)
-			this(ref OkWrap!T t) { this(t._ok); }
+		/// Promotes an `OkWrap` with no knowledge of the corresponding `E` type to a `Result`.
+		this(ref OkWrap!T t) { this(t._ok); }
 
-			/// ditto
-			static if (!IsAlwaysErr)
-			this(OkWrap!T t) { this(t._ok); }
+		/// ditto
+		this(OkWrap!T t) { this(t._ok); }
 
-			// assignment for the OK case
-			/// `= T` operator
-			Result opAssign(T value)
-			{
-				_value.val = value;
-				_hasValue = true;
-				return this;
-			}
+		// assignment for the OK case
+		/// `= T` operator
+		Result opAssign(T value)
+		{
+			_value.val = value;
+			_hasValue = true;
+			return this;
+		}
 
-			/// `= .ok(T)` operator
-			Result opAssign(OkWrap!T value)
-			{
-				_value.val = value._ok;
-
-				static if (!IsFixedState)
-					_hasValue = true;
-				return this;
-			}
+		/// `= .ok(T)` operator
+		Result opAssign(OkWrap!T value)
+		{
+			_value.val = value._ok;
+			_hasValue = true;
+			return this;
 		}
 
 		// constructors for the Err case
-		static if (!IsAlwaysOk)
+		/// Promotes an `ErrWrap` with no knowledge of the corresponding `T` type to a `Result`.
+		this(ref ErrWrap!E e)
 		{
-			/// Promotes an `ErrWrap` with no knowledge of the corresponding `T` type to a `Result`.
-			this(ref ErrWrap!E e)
-			{
-				_value.err = e._err;
+			_value.err = e._err;
+			_hasValue = false;
+		}
 
-				static if (!IsFixedState)
-					_hasValue = false;
-			}
+		/// ditto
+		this(ErrWrap!E e) { this(e); }
 
-			/// ditto
-			this(ErrWrap!E e) { this(e); }
+		/// Directly constructs a Result with an error value `err`.
+		/// Produces slightly more efficicient code than freestanding `.err()` on DMD and GDC, but does NOT on LDC.
+		static Result err()(auto ref E err) pure @trusted
+		{
+			Result r = void;
+			r._value.err = err;
+			r._hasValue = false;
+			return r;
+		}
 
-			/// Directly constructs a Result with an error value `err`.
-			/// Produces slightly more efficicient code than freestanding `.err()` on DMD and GDC, but does NOT on LDC.
-			static Result err()(auto ref E err) pure @trusted
-			{
-				Result r = void;
-				r._value.err = err;
-
-				static if (!IsFixedState)
-					r._hasValue = false;
-				return r;
-			}
-
-			// assignment for the Err case
-			/// `= .err(E)` operator
-			Result opAssign(ErrWrap!E e)
-			{
-				_value.err = e._err;
-
-				static if (!IsFixedState)
-					_hasValue = false;
-				return this;
-			}
+		// assignment for the Err case
+		/// `= .err(E)` operator
+		Result opAssign(ErrWrap!E e)
+		{
+			_value.err = e._err;
+			_hasValue = false;
+			return this;
 		}
 	}
 
@@ -216,17 +203,12 @@ struct Result(T, E) if (!is(T == void) || !is(E == void))
 
 	/// Gets the value of the result if it exists, or throws the error type if not
 	// this doesn't genericise nicely as `return` on a void makes no sense.
-	static if (!IsAlwaysErr)
 	T get() pure const @trusted => getRef();
-
-	static if (IsAlwaysErr)
-	void get() pure const { getRef(); }
 
 	/// Gets a reference to the value of the result if it exists, or throws the error type if not.
 	///
 	/// Not safe as assigning an error to this result would then invalidate the reference.
 	// this doesn't genericise nicely as `ref void` makes no sense.
-	static if (!IsAlwaysErr)
 	ref T getRef() pure const @system
 	{
 		if (!_hasValue)
@@ -235,31 +217,19 @@ struct Result(T, E) if (!is(T == void) || !is(E == void))
 		return _value.val;
 	}
 
-	static if (IsAlwaysErr)
-	void getRef() pure const { throw _value.err; }
-
 	/// The `*` operator is an alias to `get()`
 	alias opUnary(string op : "*") = get;
 
 	/// Gets the value of the result if it exists, or lazily evaluates and returns `default_`
-	static if (!IsAlwaysErr)
 	T getOr(lazy T default_) pure nothrow const @trusted
 		=> _hasValue ? _value.val : default_;
 
-	static if (IsAlwaysErr)
-	void getOr() pure nothrow const {}
-
 	/// Gets the error out of the result, or throws `ResultWasOkayException`
-	static if (!IsAlwaysOk)
 	E getError() pure const @trusted => getErrorRef();
-
-	static if (IsAlwaysOk)
-	void getError() pure const { getErrorRef(); }
 
 	/// Gets a reference to the error out of the result, or throws `ResultWasOkayException`
 	///
 	/// Not safe as assigning a success to this result would then invalidate the reference.
-	static if (!IsAlwaysOk)
 	ref E getErrorRef() pure const @system
 	{
 		if (_hasValue)
@@ -268,73 +238,30 @@ struct Result(T, E) if (!is(T == void) || !is(E == void))
 		return _value.err;
 	}
 
-	static if (IsAlwaysOk)
-	void getErrorRef() pure const { throw new ResultWasOkException; }
-
 	/// Gets the error out of the result if it exists, or lazily evaluates and returns `default_`
-	static if (!IsAlwaysOk)
 	E getErrorOr(lazy E default_) pure nothrow const @trusted
 		=> !_hasValue ? _value.err : default_;
 
-	static if (IsAlwaysOk)
-	void getErrorOr() pure nothrow const {}
-
 	/// Gets the value of result, and causes undefined behaviour if its an err
-	static if (!IsAlwaysErr)
 	T getUnchecked() pure nothrow const @system => _value.val;
 
-	static if (IsAlwaysErr)
-	void getUnchecked() pure nothrow const {}
-
 	/// Gets the error of result, and causes undefined behaviour if its ok
-	static if (!IsAlwaysOk)
 	T getErrorUnchecked() pure nothrow const @system => _value.err;
 
-	static if (IsAlwaysOk)
-	void getErrorUnchecked() pure nothrow const {}
-
 	/// Returns an `std.typecons.Nullable` with the result value
-	static if (!IsAlwaysErr)
 	Nullable!T tryGet() pure const nothrow @trusted => _hasValue ? Nullable!T(_value.val) : Nullable!T.init;
 
-	static if (IsAlwaysErr)
-	Nullable!void tryGet() pure const nothrow @trusted => Nullable!T.init;
-
 	/// Returns an `std.typecons.Nullable` with the error value
-	static if (!IsAlwaysOk)
 	Nullable!E tryGetError() pure const nothrow @trusted => !_hasValue ? Nullable!E(_value.err) : Nullable!E.init;
-
-	static if (IsAlwaysOk)
-	Nullable!void tryGetError() pure const nothrow @trusted => Nullable!E.init;
-
 
 	/// `==` operator implementation
 	bool opEquals(R)(auto ref const R other) const pure nothrow if (isInstanceOf!(Result, R))
 	{
 		if (_hasValue != other._hasValue) return false;
 
-		// oh boy i love that even though the compiler will optimise the branches out i still can't refer to val etc
-		static if (IsFixedState || other.IsFixedState)
-		{
-			static if (IsFixedState)
-			{
-				static if (_hasValue)
-					return _value.val == other._value.val;
-				else
-					return _value.err == other._value.err;
-			}
-			else static if (other.IsFixedState)
-			{
-				static if (other._hasValue)
-					return _value.val == other._value.val;
-				else
-					return _value.err == other._value.err;
-			}
-			else
-				return _value.err == other._value.err;
-		}
-		else
-			return hasValue ? _value.val == other._value.val : _value.err == other._value.err;
+		return hasValue
+			? _value.val == other._value.val
+			: _value.err == other._value.err;
 	}
 
 	/// ditto
@@ -343,13 +270,7 @@ struct Result(T, E) if (!is(T == void) || !is(E == void))
 	{
 		import ysbase : getHashOf;
 
-		// I wish D had a combination `if` and `static if` based on if the param was an `enum` lvalue or not.
-		static if (IsAlwaysOk)
-			return getHashOf(_value.val);
-		else static if (IsAlwaysErr)
-			return getHashOf(_value.err);
-		else
-			return _hasValue ? getHashOf(_value.val) : getHashOf(_value.err);
+		return _hasValue ? getHashOf(_value.val) : getHashOf(_value.err);
 	}
 
 
@@ -362,8 +283,6 @@ struct Result(T, E) if (!is(T == void) || !is(E == void))
 			return ok(func(_value.val)).insteadOf!E;
 		else
 			return err(_value.err).insteadOf!(ReturnType!F);
-
-			// TODO: finish converting this to allow fixedstate or entirely remove it
 	}
 
 	/// If this value is Ok, lazily return res2, else just return self
