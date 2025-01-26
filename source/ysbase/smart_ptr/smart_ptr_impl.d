@@ -8,7 +8,7 @@ module ysbase.smart_ptr.smart_ptr_impl;
 import ysbase.smart_ptr.control_block;
 import ysbase.smart_ptr.reference_wrap;
 
-import std.traits : isInstanceOf, TemplateArgsOf, hasElaborateDestructor, hasMember, isDynamicArray, ForeachType;
+import std.traits : isInstanceOf, TemplateArgsOf, hasElaborateDestructor, hasMember, isDynamicArray, ForeachType, isCopyable;
 
 /// Is `T` some kind of smart pointer?
 enum isSmartPtr(T) = isInstanceOf!(SmartPtrImpl, T);
@@ -281,7 +281,7 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool hasAtomicRCs_, bool isWeak_ 
 
 // #endregion
 
-// #region Value Access
+// #region Value Access & Transforms
 
 	/// Provides the `*` operator. Alias for `value`.
 	template opUnary(string op) if (op == "*")
@@ -298,7 +298,7 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool hasAtomicRCs_, bool isWeak_ 
 	{
 		assert(_managed_obj.reference, "Cannot dereference an empty smart pointer");
 		static if (isWeak)
-			assert(!isDangling, "Cannot dereference a dangling WeakPtr. THIS WILL CAUSE USE-AFTER-FREE IN RELEASE BUILDS.");
+			assert(!isDangling, "Cannot dereference a dangling WeakPtr. THIS WILL CAUSE A USE-AFTER-FREE IN RELEASE BUILDS.");
 
 		return _managed_obj.value;
 	}
@@ -311,6 +311,29 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool hasAtomicRCs_, bool isWeak_ 
 	{
 		assert(_managed_obj.reference, "Cannot get a reference into an empty smart pointer");
 		return _managed_obj.reference;
+	}
+
+	/// Copies the managed value into a new and separate smart pointer of the same type.
+	/// Defined only when `ManagedType` is copyable.
+	static if (isCopyable!ManagedType)
+	SmartPtrImpl copy_to_new() const pure => SmartPtrImpl(*this);
+
+	/// Moves the managed value into a new and separate smart pointer of the same type.
+	/// If the type has an elaborate destructible or a postblit, this smart pointer's value will be reset to `.init`.
+	///
+	/// Equivalent to `copy_to_new` for trivially copyable and trivially destructible types.
+	SmartPtrImpl move_to_new()
+	{
+		import ysbase : zcmove;
+
+		return SmartPtrImpl(zcmove!(ManagedType, true)(*this));
+	}
+
+	/// Gives `fn` temporary readonly access to the value of this smart pointer,
+	/// then creates a smart pointer like this one from its return type.
+	SmartPtrImpl!(ControlBlock, R, hasAtomicRCs_, isWeak_) new_with(R)(R delegate(const scope ManagedType) fn)
+	{
+		return SmartPtrImpl!(ControlBlock, R, hasAtomicRCs_, isWeak_)(fn(*this));
 	}
 
 // #endregion
