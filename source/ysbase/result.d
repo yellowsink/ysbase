@@ -6,8 +6,10 @@ This can be directly likened to Rust's `Result<T, E>`, and C++'s `std::expected<
 It allows localised error handling by manually checking error state (`if (auto value = res) {}`), and centralised error
 handling via the `.get` method and `*` operator, which throw the unexpected value if present (`auto value = *res;`).
 
-The result module implements an API based on a proposal shown off by Andrei Alexandrescu in
-$(LINK2 https://youtu.be/PH4WBuE1BHI, This cppcon talk), and implemented in `std::expected`.
+The result module implements an API loosely based on a proposal shown off by Andrei Alexandrescu in
+$(LINK2 https://youtu.be/PH4WBuE1BHI, this cppcon talk), and implemented in `std::expected`.
+
+$(SRCL ysbase/result.d)
 
 Copyright: Public Domain
 Authors: Hazel Atkinson
@@ -43,6 +45,8 @@ To return errors directly from a function, you can write `return err(...).instea
 `E` must be copyable as it could be thrown.
 
 Sister to `ok()`.
+
+$(SRCLL ysbase/result.d, 51)
 +/
 ErrWrap!E err(E)(auto ref E u) if (isCopyable!E) => ErrWrap!E(u);
 
@@ -63,25 +67,23 @@ though `Result!(T, E) name = ok(...);` and `Result!(T, E) name; name = ok(...);`
 To return sucess directly from a function, you can write `return ok(...).insteadOf!E;`.
 
 Sister to `err()`.
+
+$(SRCLL ysbase/result.d, 73)
 +/
 OkWrap!T ok(T)(auto ref T v) => OkWrap!T(zcmove(v));
 
-/*
-this is not supported for the moment, but leaving documentation here for future convenience:
-
-Always-okay results can be achieved by `Result!(T, void)`. Always-err results can be achieved by `Result!(void, E)`.
-Constructors and `=` operators will be removed as appropriate, but getter functions' signatures will not be changed.
-
-`Result!(void, void)` is not allowed, as then, e.g. `get` has no `T` to give, but also no `E` to give to `ResultException`.
-
- */
-
 /++
-`Result` is the wrapper type containing either a success value of type `T` or failure of type `E`. See top level docs.
+`Result` is the wrapper type containing either a success value of type `T` or failure of type `E`.
+$(LINK2 ../result.html, See top level docs).
 
 The default initialization of a result (e.g. `Result!(T, E) res;`) is in the OK state with a default-initialized `T`.
 
+`T` and `E` cannot be `void`, as that would make the ok-ness of the result statically knowable. You may, naturally,
+use $(LINK2 /ysbase/Unit.html, `Unit`) to have payloadless ok and/or error cases.
+
 `E` must be copyable as it could be thrown. `T` need not be.
+
+$(SRCLL ysbase/result.d, 88)
 +/
 struct Result(T, E) if (!is(T == void) && !is(E == void) && isCopyable!E)
 {
@@ -95,9 +97,9 @@ struct Result(T, E) if (!is(T == void) && !is(E == void) && isCopyable!E)
 
 @safe:
 
-	///
+	/// The ok caes type `T`
 	alias ValueType = T;
-	///
+	/// The error case type `E`
 	alias ErrType = E;
 
 	private union Inner

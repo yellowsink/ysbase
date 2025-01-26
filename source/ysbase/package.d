@@ -132,8 +132,12 @@ unittest
 }
 
 /// Gets the hash code for an object. Calls `value.toHash` if it exists, else uses the class pointer, or hashes the struct value.
-/// Will fail if an object has `toHash` but does not define it to be `const @nogc @safe pure nothrow`.
-size_t getHashOf(T)(auto const ref T value) @nogc @safe pure nothrow
+/// If defined, `toHash` must be const.
+///
+/// It will have as many other attributes as is possible - you should aim for `toHash() @nogc @safe pure nothrow`.
+///
+/// $(SRCLL ysbase/package.d, 140)
+size_t getHashOf(T)(auto const ref T value)
 {
 	import std.traits : hasMember;
 
@@ -158,6 +162,8 @@ size_t getHashOf(T)(auto const ref T value) @nogc @safe pure nothrow
  + It can optionally be set to move for some copyable types, if the type has an *elaborate* copy process - that is,
  + instead of "copy whenever possible", "copy whenever cheap".
  +
+ + $(SRCLL ysbase/package.d, 171)
+ +
  + Params:
  +   src        = The value to move
  +   MoveIfElab = When true, will only copy trivially copyable types, not all copyable types.
@@ -172,3 +178,35 @@ T zcmove(T, bool MoveIfElab = false)(scope ref return T src)
 	else
 		return src;
 }
+
+/++
+A singleton type that can be used in place of `void`, `noreturn`, or `typeof(null)` as potential "nothing" types.
+
+You can use any of the following expressions to obtain a `Unit`: `Unit()`, `Unit.init`, `unit`.
+
+Unlike `void`, which represents a type that has no value at all, `Unit` represents a type that has a single true
+value. It is most accurately comparable to Rust's `()`.
+
+To exemplify the distinction: `Result!(T, void)` (if it compiled!) would represent a never-err result, while
+`Result!(T, Unit)` would represent a result that can be err, but does not carry a payload for that case.
+
+This behaviour hugely improves the ease of use of a payloadless pattern in generic code as, unlike `void`, `Unit`
+absolutely can be passed to and returned from functions, may exist within structs and unions, and does not make
+it possible for some of the potential data structure states to be made invalid.
+
+Technically speaking, there is absolutely nothing at all special about this type, it is literally `struct Unit {}`,
+any empty struct will do, but it is useful to have one globally recognised unit type that we can agree upon, just like
+`()` in Rust and `unit` in F#.
+
+Note that this is not an anonymous struct `struct Unit;` as that definition would make `Unit` impossible to handle
+except through a pointer indirection, and is thus no better than `void`!
+
+$(SRCLL ysbase/package.d, 206)
++/
+struct Unit {}
+
+version (D_Ddoc)
+	/// The pre-constructed singleton value of type `Unit`.
+	static Unit unit;
+else
+	enum unit = Unit();
