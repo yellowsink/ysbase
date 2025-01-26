@@ -15,52 +15,56 @@ License: $(LINK2 https://unlicense.org, Unlicense)
 +/
 module ysbase.result;
 
+import std.traits : isInstanceOf, isCallable, ReturnType, hasElaborateDestructor, isCopyable;
+import std.typecons : Nullable;
+
+import ysbase : zcmove;
+
 // Note about this module: I know barely anything about OpenD (https://opendlang.org/changes.html), and am skeptical of
 // its ability to go anywhere, but its `opImplicitCast` would make this implementation *hugely* nicer to use.
 // Looking forward to any kind of similar DIPs that could replace `alias this`, which sadly cannot be generic.
 
-/++
-An unremarkable wrapper struct for a value that is an error but that has no knowledge of the success type.
-
-This allows for improved type deduction (sadly not as nice as C++'s implicit conversion rules allow).
-See $(LINK https://godbolt.org/z/TYKvd4Pbv) to see examples of how the type deduction plays out.
-
-Use $(D err) to construct this.
-+/
-struct ErrWrap(E)
+/// The struct returned by `err()`, please refer to its documentation.
+struct ErrWrap(E) if (isCopyable!E)
 {
-	static if (!is(E == void))
 	E _err;
 
-	/// While implicit conversion is possible for `Expected!(E, U) = unexpected();` cases,
-	/// it is not for `return unexpected();` cases, so this allows the `return unexpected().insteadOf!E;` pattern.
-	auto insteadOf(E)() => Result!(T, E)(this);
+	/// This provides type information for `return err().insteadOf!T;` to compile.
+	Result!(T, E) insteadOf(T)() => Result!(T, E)(this);
 }
-
-/// Creates a value representing failure. Like `ErrWrap` itself, exists to ease type deduction.
-ErrWrap!E err(E)(auto ref E u) => ErrWrap(u);
 
 /++
-An unremarkable wrapper struct for a value that is a success but that has no knowledge of the error type.
+Creates a value representing failure, with no knowledge of the success type. Exists to ease type deduction.
 
-This allows for improved type deduction (sadly not as nice as C++'s implicit conversion rules allow).
-See $(LINK https://godbolt.org/z/TYKvd4Pbv) to see examples of how the type deduction plays out.
+Sadly, D's type implicit conversions are not as nice as C++'s, so we cannot make `return err(...);` compile,
+though `Result!(T, E) name = err(...);` and `Result!(T, E) name; name = err(...);` both compile.
+To return errors directly from a function, you can write `return err(...).insteadOf!T;`.
 
-Use $(D ok) to construct this.
+`E` must be copyable as it could be thrown.
+
+Sister to `ok()`.
 +/
+ErrWrap!E err(E)(auto ref E u) if (isCopyable!E) => ErrWrap!E(u);
+
+/// The struct returned by `ok()`, please refer to its documentation.
 struct OkWrap(T)
 {
-	static if (!is(T == void))
 	T _ok;
 
-	/// While implicit conversion is possible for `Expected!(E, U) = unexpected();` cases,
-	/// it is not for `return unexpected();` cases, so this allows the `return unexpected().insteadOf!E;` pattern.
-	auto insteadOf(E)() => Expected!(E, U)(this);
+	/// This provides type information for `return ok().insteadOf!E;` to compile.
+	Result!(T, E) insteadOf(E)() => Result!(T, E)(zcmove(this));
 }
 
-/// Creates a value representing a success! Like `OkWrap` itself, exists to ease type deduction.
-OkWrap!T ok(T)(auto ref T v) => OkWrap(v);
+/++
+Creates a value representing a success, with no knowledge of the error type. Exists to ease type deduction.
 
+Sadly, D's type implicit conversions are not as nice as C++'s, so we cannot make `return ok(...);` compile,
+though `Result!(T, E) name = ok(...);` and `Result!(T, E) name; name = ok(...);` both compile.
+To return sucess directly from a function, you can write `return ok(...).insteadOf!E;`.
+
+Sister to `err()`.
++/
+OkWrap!T ok(T)(auto ref T v) => OkWrap!T(zcmove(v));
 
 /*
 this is not supported for the moment, but leaving documentation here for future convenience:
@@ -76,35 +80,18 @@ Constructors and `=` operators will be removed as appropriate, but getter functi
 `Result` is the wrapper type containing either a success value of type `T` or failure of type `E`. See top level docs.
 
 The default initialization of a result (e.g. `Result!(T, E) res;`) is in the OK state with a default-initialized `T`.
-+/
-struct Result(T, E) if (!is(T == void) && !is(E == void))
-{
-	import core.lifetime : move;
-	import std.traits : isInstanceOf, isCallable, ReturnType;
-	import std.typecons : Nullable;
 
+`E` must be copyable as it could be thrown. `T` need not be.
++/
+struct Result(T, E) if (!is(T == void) && !is(E == void) && isCopyable!E)
+{
 	version (D_DDoc)
 	{
 		/// Will the error be wrapped in `ResultException` when thrown?
 		static bool ErrWillBeWrapped;
-/*
-		/// Is this result always OK, and never err? (This is the same concept as Rust's `std::convert::Infallible`)
-		static bool IsAlwaysOk;
-
-		/// Is this result always err, and never OK?
-		static bool IsAlwaysErr;
-
-		/// Is the OKness of this result statically known?
-		static bool IsFixedState; */
 	}
 
 	enum ErrWillBeWrapped = !is(E : Exception);
-
-/* 	enum IsAlwaysOk = is(E == void);
-
-	enum IsAlwaysErr = is(T == void);
-
-	enum IsFixedState = IsNeverErr || IsNeverOk; */
 
 @safe:
 
@@ -120,60 +107,62 @@ struct Result(T, E) if (!is(T == void) && !is(E == void))
 	}
 
 	// default the Result to a default-inited T, so _hasValue defaults to true
-	//static if (!IsFixedState)
 	private bool _hasValue = true;
-	/* else static if (AlwaysOk)
-		private enum _hasValue = true;
-	else
-		private enum _hasValue = false; */
-
 	private Inner _value;
+
+	~this() @trusted
+	{
+		if (_hasValue)
+			destroy!false(_value.val);
+		else
+			destroy!false(_value.err);
+	}
 
 	nothrow
 	{
 		// constructors for the OK case
 		/// Direct constructor for the OK case
-		this(ref T val)
+		this(ref T t)
 		{
-			_value.val = move(val);
+			_value.val = zcmove(t);
 		}
 
 		/// ditto
 		this(T val) { this(val); }
 
 		/// Promotes an `OkWrap` with no knowledge of the corresponding `E` type to a `Result`.
-		this(ref OkWrap!T t) { this(t._ok); }
+		this(ref OkWrap!T ok) { this(ok._ok); }
 
 		/// ditto
-		this(OkWrap!T t) { this(t._ok); }
+		this(OkWrap!T ok) { this(ok._ok); }
 
 		// assignment for the OK case
 		/// `= T` operator
-		Result opAssign(T value)
+		Result opAssign()(auto ref T t)
 		{
-			_value.val = value;
+			_value.val = zcmove(t);
 			_hasValue = true;
 			return this;
 		}
 
 		/// `= .ok(T)` operator
-		Result opAssign(OkWrap!T value)
+		Result opAssign()(auto ref OkWrap!T ok)
 		{
-			_value.val = value._ok;
+			_value.val = zcmove(ok._ok);
 			_hasValue = true;
 			return this;
 		}
 
 		// constructors for the Err case
 		/// Promotes an `ErrWrap` with no knowledge of the corresponding `T` type to a `Result`.
-		this(ref ErrWrap!E e)
+		this(ref ErrWrap!E err)
 		{
-			_value.err = e._err;
+			_value.err = err._err;
 			_hasValue = false;
 		}
 
 		/// ditto
-		this(ErrWrap!E e) { this(e); }
+		this(ErrWrap!E err) { this(err); }
 
 		/// Directly constructs a Result with an error value `err`.
 		/// Produces slightly more efficicient code than freestanding `.err()` on DMD and GDC, but does NOT on LDC.
@@ -187,9 +176,9 @@ struct Result(T, E) if (!is(T == void) && !is(E == void))
 
 		// assignment for the Err case
 		/// `= .err(E)` operator
-		Result opAssign(ErrWrap!E e)
+		Result opAssign()(auto ref ErrWrap!E err) @trusted
 		{
-			_value.err = e._err;
+			_value.err = err._err;
 			_hasValue = false;
 			return this;
 		}
@@ -202,35 +191,44 @@ struct Result(T, E) if (!is(T == void) && !is(E == void))
 	alias opCast(T : bool) = isOk;
 
 	/// Gets the value of the result if it exists, or throws the error type if not
-	// this doesn't genericise nicely as `return` on a void makes no sense.
+	static if (isCopyable!T)
 	T get() pure const @trusted => getRef();
+
+	/// Moves the value of the result out if it exists, or throws the error type if not.
+	T getMove() @trusted => zcmove(getRef());
 
 	/// Gets a reference to the value of the result if it exists, or throws the error type if not.
 	///
 	/// Not safe as assigning an error to this result would then invalidate the reference.
-	// this doesn't genericise nicely as `ref void` makes no sense.
-	ref T getRef() pure const @system
+	ref inout(T) getRef() pure inout @system
 	{
-		if (!_hasValue)
-			throw _value.err; // TODO: handle non-Exception `E`s nicely
+		if (_hasValue)
+			return _value.val;
 
-		return _value.val;
+		static if (ErrWillBeWrapped)
+			throw new ResultException!E(_value.err);
+		else
+			throw _value.err;
 	}
 
 	/// The `*` operator is an alias to `get()`
 	alias opUnary(string op : "*") = get;
 
 	/// Gets the value of the result if it exists, or lazily evaluates and returns `default_`
-	T getOr(lazy T default_) pure nothrow const @trusted
+	static if (isCopyable!T)
+	T getOr(lazy T default_) pure const @trusted
 		=> _hasValue ? _value.val : default_;
 
 	/// Gets the error out of the result, or throws `ResultWasOkayException`
 	E getError() pure const @trusted => getErrorRef();
 
+	/// Moves the error of the result out if it exists, or throws the error type if not.
+	E getErrorMove() @trusted => zcmove(getErrorRef());
+
 	/// Gets a reference to the error out of the result, or throws `ResultWasOkayException`
 	///
 	/// Not safe as assigning a success to this result would then invalidate the reference.
-	ref E getErrorRef() pure const @system
+	ref inout(E) getErrorRef() pure inout @system
 	{
 		if (_hasValue)
 			throw new ResultWasOkException;
@@ -239,16 +237,17 @@ struct Result(T, E) if (!is(T == void) && !is(E == void))
 	}
 
 	/// Gets the error out of the result if it exists, or lazily evaluates and returns `default_`
-	E getErrorOr(lazy E default_) pure nothrow const @trusted
+	E getErrorOr(lazy E default_) pure const @trusted
 		=> !_hasValue ? _value.err : default_;
 
 	/// Gets the value of result, and causes undefined behaviour if its an err
-	T getUnchecked() pure nothrow const @system => _value.val;
+	ref inout(T) getUnchecked() pure nothrow inout @system => _value.val;
 
 	/// Gets the error of result, and causes undefined behaviour if its ok
-	T getErrorUnchecked() pure nothrow const @system => _value.err;
+	ref inout(E) getErrorUnchecked() pure nothrow inout @system => _value.err;
 
 	/// Returns an `std.typecons.Nullable` with the result value
+	static if (isCopyable!T)
 	Nullable!T tryGet() pure const nothrow @trusted => _hasValue ? Nullable!T(_value.val) : Nullable!T.init;
 
 	/// Returns an `std.typecons.Nullable` with the error value
@@ -266,18 +265,17 @@ struct Result(T, E) if (!is(T == void) && !is(E == void))
 
 	/// ditto
 	// used for associative arrays and the like
-	size_t toHash() const @nogc @safe pure nothrow
+	size_t toHash() const @nogc @trusted pure nothrow
 	{
 		import ysbase : getHashOf;
 
 		return _hasValue ? getHashOf(_value.val) : getHashOf(_value.err);
 	}
 
-
 	// chaining ops:
 
 	/// If this value is Ok, map it through the function, else just return self
-	Result!(ReturnType!F, E) map(F)(auto ref F func) if(isCallable!F)
+	Result!(ReturnType!F, E) map(F)(auto ref F func) if (isCallable!F)
 	{
 		if (_hasValue)
 			return ok(func(_value.val)).insteadOf!E;
@@ -343,19 +341,28 @@ struct Result(T, E) if (!is(T == void) && !is(E == void))
 /// are not `Exception`s should not be used for control flow and so are not treated as "special" by ysbase's `Result`.
 class ResultException(E) if (!is(E : Exception)) : Exception
 {
+	/// The `err` value of the result from which this exception was thrown.
+	E thrownErr;
+
 	// we don't need to handle E == void as if a result cannot be err, ResultException can never be thrown!
-	this(string callerName)(E e, string file = __FILE__, size_t line = __LINE__, Throwable next = null)
+	pure @safe this(E e, string file = __FILE__, size_t line = __LINE__, Throwable next = null)
 	{
 		thrownErr = e;
-		super("Cannot call " ~ callerName ~ " on a result that is err.", file, line, next);
+		super("Cannot attempt to get the value from a result that is err.", file, line, next);
 	}
 }
 
 /// An exception thrown when trying to get the error out of a result that was ok.
 class ResultWasOkException : Exception
 {
-	this(string callerName)(string file = __FILE__, size_t line = __LINE__, Throwable next = null)
+	pure @safe this(string file = __FILE__, size_t line = __LINE__, Throwable next = null)
 	{
-		super("Cannot call " ~ callerName ~ " on a result that is ok.", file, line, next);
+		super("Cannot attempt to get the error from a result that is ok.", file, line, next);
 	}
+}
+
+unittest
+{
+	// just to make it actually compile check everything
+	Result!(int, bool) instantiate;
 }

@@ -149,3 +149,26 @@ size_t getHashOf(T)(auto const ref T value) @nogc @safe pure nothrow
 		return (()@trusted => value.transmute!(ubyte[T.sizeof]))().fold!((a, b) => a ^ b);
 	}
 }
+
+/++ `move()` but just does a copy for copyable types with $(LINK2 https://godbolt.org/z/7M1vPz3e6, no overhead).
+ +
+ + `zcmove` is useful where you don't actually care about copy elision,
+ + but do care about making code compile with uncopyable arguments without having to pay for `move()` otherwise.
+ +
+ + It can optionally be set to move for some copyable types, if the type has an *elaborate* copy process - that is,
+ + instead of "copy whenever possible", "copy whenever cheap".
+ +
+ + Params:
+ +   src        = The value to move
+ +   MoveIfElab = When true, will only copy trivially copyable types, not all copyable types.
+ +/
+T zcmove(T, bool MoveIfElab = false)(scope ref return T src)
+{
+	import core.lifetime : move;
+	import std.traits : hasElaborateCopyConstructor, isCopyable;
+
+	static if (!isCopyable!T || (MoveIfElab && hasElaborateCopyConstructor!T))
+		return move(src);
+	else
+		return src;
+}
