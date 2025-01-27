@@ -313,10 +313,10 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool hasAtomicRCs_, bool isWeak_ 
 		return _managed_obj.reference;
 	}
 
-	/// Copies the managed value into a new and separate smart pointer of the same type.
+	/* /// Copies the managed value into a new and separate smart pointer of the same type.
 	/// Defined only when `ManagedType` is copyable.
 	static if (isCopyable!ManagedType)
-	SmartPtrImpl copy_to_new() const pure => SmartPtrImpl(*this);
+	SmartPtrImpl copy_to_new() => SmartPtrImpl.make(*this);
 
 	/// Moves the managed value into a new and separate smart pointer of the same type.
 	/// If the type has an elaborate destructible or a postblit, this smart pointer's value will be reset to `.init`.
@@ -326,15 +326,15 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool hasAtomicRCs_, bool isWeak_ 
 	{
 		import ysbase : zcmove;
 
-		return SmartPtrImpl(zcmove!(ManagedType, true)(*this));
-	}
+		return SmartPtrImpl.make(zcmove!(ManagedType, true)(*this));
+	} */
 
-	/// Gives `fn` temporary readonly access to the value of this smart pointer,
+	/* /// Gives `fn` temporary readonly access to the value of this smart pointer,
 	/// then creates a smart pointer like this one from its return type.
 	SmartPtrImpl!(ControlBlock, R, hasAtomicRCs_, isWeak_) new_with(R)(R delegate(const scope ManagedType) fn)
 	{
 		return SmartPtrImpl!(ControlBlock, R, hasAtomicRCs_, isWeak_)(fn(*this));
-	}
+	} */
 
 // #endregion
 
