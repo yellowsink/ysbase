@@ -293,7 +293,7 @@ unittest
 	// change the case to y just by setting it.
 	// `un.setY()` will initialize to `T.init`, `un.setY(value)` is equivalent to `un.y = value`
 	un.y = true;
-	assert(un.y == false);
+	assert(un.isY);
 }
 
 ///
