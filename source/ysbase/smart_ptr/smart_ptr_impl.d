@@ -109,7 +109,7 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool hasAtomicRCs_, bool isWeak_ 
 	 +         Must match our own safety and, and its type must be the same as (or a class descendant of) ours.
 	 +/
 	static if (isManagedObjectShared || isWeak)
-	this(Rhs)(auto scope ref Rhs rhs) if (canShareFrom!Rhs)
+	this(Rhs)(auto ref scope Rhs rhs) if (canShareFrom!Rhs)
 	{
 		this = rhs;
 	}
@@ -145,7 +145,7 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool hasAtomicRCs_, bool isWeak_ 
 	 +         Must match our own safety and, and its type must be the same as (or a class descendant of) ours.
 	 +/
 	static if (isManagedObjectShared || isWeak)
-	void opAssign(Rhs)(auto scope ref Rhs rhs) if (canShareFrom!Rhs)
+	void opAssign(Rhs)(auto ref scope Rhs rhs) if (canShareFrom!Rhs)
 	{
 		// clean the slate: set ourselves to the null smart pointer
 		if (_control_block !is null) this = null;

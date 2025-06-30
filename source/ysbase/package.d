@@ -137,7 +137,7 @@ unittest
 /// It will have as many other attributes as is possible - you should aim for `toHash() @nogc @safe pure nothrow`.
 ///
 /// $(SRCLL ysbase/package.d, 140)
-size_t getHashOf(T)(auto const ref T value)
+size_t getHashOf(T)(auto ref const T value)
 {
 	import std.traits : hasMember;
 

@@ -108,7 +108,7 @@ public:
 	/// Construct a list out of another list (or range), with a provided allocator instance.
 	/// Requires the allocator to be stateful and non-default.
 	static if (allocatorIsStateful)
-	this(R)(auto scope ref R rhs, TAlloc alloc) if (isInputRange!R && is(T == ElementType!R))
+	this(R)(auto ref scope R rhs, TAlloc alloc) if (isInputRange!R && is(T == ElementType!R))
 	{
 		_allocator = alloc;
 		() @trusted { this = rhs; }();
@@ -120,7 +120,7 @@ public:
 	///
 	/// To explicitly construct from another list with the same `TAlloc` with a default-initialized allocator instance,
 	/// you could first define the list and then assign the list into it.
-	this(R)(auto scope ref R rhs) if (isInputRange!R && is(T == ElementType!R))
+	this(R)(auto ref scope R rhs) if (isInputRange!R && is(T == ElementType!R))
 	{
 		static if (allocatorIsStateful && isList!R && is(typeof(rhs.allocator == TAlloc)))
 			_allocator = rhs.allocator;
@@ -147,7 +147,7 @@ public:
 
 	/// Copy into this list from an input range (or another list!)
 	/// Note this copies every element, it does not share them.
-	void opAssign(Rhs)(auto scope ref Rhs rhs) if (isInputRange!Rhs && is(T == ElementType!Rhs))
+	void opAssign(Rhs)(auto ref scope Rhs rhs) if (isInputRange!Rhs && is(T == ElementType!Rhs))
 	{
 		static if (hasLength!Rhs)
 			reserve(rhs.length);

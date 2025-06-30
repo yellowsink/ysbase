@@ -51,7 +51,7 @@ struct RcStruct(T) if (is(T == struct))
 	}
 
 	// constructor forwarder
-	this(A...)(auto scope ref A a)
+	this(A...)(auto ref scope A a)
 	{
 		import core.lifetime : forward;
 

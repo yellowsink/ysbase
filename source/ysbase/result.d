@@ -72,6 +72,32 @@ $(SRCLL ysbase/result.d, 73)
 +/
 OkWrap!T ok(T)(auto ref T v) => OkWrap!T(zcmove(v));
 
+/// The `Exception` used to wrap non-`Exception` error values for `Result` when they must be thrown.
+///
+/// Note that `ResultException` may contain `Throwable` non-`Exception` types (such as `Error`s!), as throwables that
+/// are not `Exception`s should not be used for control flow and so are not treated as "special" by ysbase's `Result`.
+class ResultException(E) if (!is(E : Exception)) : Exception
+{
+	/// The `err` value of the result from which this exception was thrown.
+	E thrownErr;
+
+	// we don't need to handle E == void as if a result cannot be err, ResultException can never be thrown!
+	pure @safe this(E e, string file = __FILE__, size_t line = __LINE__, Throwable next = null)
+	{
+		thrownErr = e;
+		super("Cannot attempt to get the value from a result that is err.", file, line, next);
+	}
+}
+
+/// An exception thrown when trying to get the error out of a result that was ok.
+class ResultWasOkException : Exception
+{
+	pure @safe this(string file = __FILE__, size_t line = __LINE__, Throwable next = null)
+	{
+		super("Cannot attempt to get the error from a result that is ok.", file, line, next);
+	}
+}
+
 /++
 `Result` is the wrapper type containing either a success value of type `T` or failure of type `E`.
 $(LINK2 ../result.html, See top level docs).
@@ -83,14 +109,14 @@ use $(LINK2 /ysbase/Unit.html, `Unit`) to have payloadless ok and/or error cases
 
 `E` must be copyable as it could be thrown. `T` need not be.
 
-$(SRCLL ysbase/result.d, 88)
+$(SRCLL ysbase/result.d, 114)
 +/
 struct Result(T, E) if (!is(T == void) && !is(E == void) && isCopyable!E)
 {
 	version (D_DDoc)
 	{
 		/// Will the error be wrapped in `ResultException` when thrown?
-		static bool ErrWillBeWrapped;
+		static bool ErrWillBeWrapped; // @suppress(dscanner.style.phobos_naming_convention)
 	}
 
 	enum ErrWillBeWrapped = !is(E : Exception);
@@ -194,7 +220,7 @@ struct Result(T, E) if (!is(T == void) && !is(E == void) && isCopyable!E)
 
 	/// Gets the value of the result if it exists, or throws the error type if not
 	static if (isCopyable!T)
-	T get() pure const @trusted => getRef();
+	T get() pure @trusted => getRef();
 
 	/// Moves the value of the result out if it exists, or throws the error type if not.
 	T getMove() @trusted => zcmove(getRef());
@@ -222,7 +248,7 @@ struct Result(T, E) if (!is(T == void) && !is(E == void) && isCopyable!E)
 		=> _hasValue ? _value.val : default_;
 
 	/// Gets the error out of the result, or throws `ResultWasOkayException`
-	E getError() pure const @trusted => getErrorRef();
+	E getError() pure @trusted => getErrorRef();
 
 	/// Moves the error of the result out if it exists, or throws the error type if not.
 	E getErrorMove() @trusted => zcmove(getErrorRef());
@@ -239,7 +265,7 @@ struct Result(T, E) if (!is(T == void) && !is(E == void) && isCopyable!E)
 	}
 
 	/// Gets the error out of the result if it exists, or lazily evaluates and returns `default_`
-	E getErrorOr(lazy E default_) pure const @trusted
+	E getErrorOr(lazy E default_) pure @trusted
 		=> !_hasValue ? _value.err : default_;
 
 	/// Gets the value of result, and causes undefined behaviour if its an err
@@ -250,10 +276,10 @@ struct Result(T, E) if (!is(T == void) && !is(E == void) && isCopyable!E)
 
 	/// Returns an `std.typecons.Nullable` with the result value
 	static if (isCopyable!T)
-	Nullable!T tryGet() pure const nothrow @trusted => _hasValue ? Nullable!T(_value.val) : Nullable!T.init;
+	Nullable!T tryGet() pure nothrow @trusted => _hasValue ? Nullable!T(_value.val) : Nullable!T.init;
 
 	/// Returns an `std.typecons.Nullable` with the error value
-	Nullable!E tryGetError() pure const nothrow @trusted => !_hasValue ? Nullable!E(_value.err) : Nullable!E.init;
+	Nullable!E tryGetError() pure nothrow @trusted => !_hasValue ? Nullable!E(_value.err) : Nullable!E.init;
 
 	/// `==` operator implementation
 	bool opEquals(R)(auto ref const R other) const pure nothrow if (isInstanceOf!(Result, R))
@@ -267,7 +293,8 @@ struct Result(T, E) if (!is(T == void) && !is(E == void) && isCopyable!E)
 
 	/// ditto
 	// used for associative arrays and the like
-	size_t toHash() const @nogc @trusted pure nothrow
+	// ideally want const @nogc @trusted pure nothrow but we just gotta go with what we can
+	size_t toHash()() @trusted
 	{
 		import ysbase : getHashOf;
 
@@ -337,34 +364,147 @@ struct Result(T, E) if (!is(T == void) && !is(E == void) && isCopyable!E)
 		=> _hasValue ? _value.val : err(_value.err).insteadOf!(T.ValueType);
 }
 
-/// The `Exception` used to wrap non-`Exception` error values for `Result` when they must be thrown.
-///
-/// Note that `ResultException` may contain `Throwable` non-`Exception` types (such as `Error`s!), as throwables that
-/// are not `Exception`s should not be used for control flow and so are not treated as "special" by ysbase's `Result`.
-class ResultException(E) if (!is(E : Exception)) : Exception
-{
-	/// The `err` value of the result from which this exception was thrown.
-	E thrownErr;
-
-	// we don't need to handle E == void as if a result cannot be err, ResultException can never be thrown!
-	pure @safe this(E e, string file = __FILE__, size_t line = __LINE__, Throwable next = null)
-	{
-		thrownErr = e;
-		super("Cannot attempt to get the value from a result that is err.", file, line, next);
-	}
-}
-
-/// An exception thrown when trying to get the error out of a result that was ok.
-class ResultWasOkException : Exception
-{
-	pure @safe this(string file = __FILE__, size_t line = __LINE__, Throwable next = null)
-	{
-		super("Cannot attempt to get the error from a result that is ok.", file, line, next);
-	}
-}
-
+/// Local error handling with Result:
 unittest
 {
-	// just to make it actually compile check everything
-	Result!(int, bool) instantiate;
+	Result!(int, string) doSomething()
+	{
+		Result!(int, string) res;
+
+		// do some work...
+		res = ok(5);
+
+		return res;
+	}
+
+	Result!(int, string) doSomethingElse() => err(":(").insteadOf!int;
+
+	// ======
+
+	auto result = doSomething();
+	if (result) {
+		// get the result value
+		int val = *result;
+	}
+
+	// also works if you don't care about handling the error case
+	if (auto res = doSomething()) {
+		*res;
+	}
+
+	auto failedResult = doSomethingElse();
+	if (!failedResult.isOk) {
+		// report an error here to the logs etc
+		string e = failedResult.getError;
+	}
+}
+
+/// Centralised error handling with result
+unittest
+{
+	Result!(int, string) doSomething() => err(":(").insteadOf!int;
+
+	// we don't care about errors! we just wanna get the thing and double it!
+	// note nice ergonomics in this function if we don't want to think about errors rn - like rust; unlike go :p
+	int doubledTheThing()
+	{
+		// trying to get from a errored result throws
+		return doSomething().get * 2;
+	}
+
+	try {
+		auto doubled = doubledTheThing();
+		assert(0);
+	} catch (ResultException!string) {}
+
+	// and equally getting the error from a valid result throws to be handled later:
+	auto r = Result!(int, string)(3);
+
+	try {
+		r.getError;
+		assert(0);
+	} catch (ResultWasOkException)
+	{
+	}
+}
+
+/// Many ways to construct a result:
+unittest
+{
+	// explicit ok
+	auto o1 = Result!(int, string)(3);
+	// construct from value
+	Result!(int, string) o2 = 3;
+	// construct from ok()
+	Result!(int, string) o3 = ok(3);
+	// fully implicit ok
+	auto o4 = ok(3).insteadOf!string;
+
+	// explicit err
+	auto e1 = Result!(int, string).err("hi");
+	// construct from err()
+	Result!(int, string) e2 = err("hi");
+	// fully implicit err
+	auto e3 = err("hi").insteadOf!int;
+
+	// `.insteadOf` is sadly necessary as current D has no way to cast the ok() and err() types to
+	// a full Result!() in a function return position - that is, `return ok();` cannot be made to work.
+	// If OpenD style opImplicitCast ever hits upstream, a best attempt at supporting this will be made. :)
+}
+
+/// Many ways of retrieving the values from the result:
+unittest
+{
+	Result!(int, string) success = 0;
+	Result!(int, string) failure = err("");
+
+	// copy value / error out
+	success.get;
+	failure.getError;
+
+	// dereference operator is an alias for get
+	*success;
+
+	// move value / error out for types that arent copyable / are expensive to copy
+	success.getMove;
+	failure.getErrorMove;
+
+	// get references to allow in-place modification. unsafe due to ability for reference to outlive result mutation
+	success.getRef++;
+	failure.getErrorRef = "hi :)";
+
+	// get as a `std.typecons.Nullable`
+	assert(!success.tryGet.isNull);
+	assert(success.tryGetError.isNull);
+	assert(failure.tryGet.isNull);
+	assert(!failure.tryGetError.isNull);
+
+	// get with lazily-evaluated default
+	failure.getOr(10);
+	success.getErrorOr("actually everything's fine!");
+
+	// unchecked getters that invoke UB (REALLY bad) if the state is wrong
+	if (success.isOk) success.getUnchecked;
+	if (!failure.isOk) failure.getErrorUnchecked;
+}
+
+/// `Exception`s need not be wrapped in a `ResultException`:
+unittest
+{
+	class MyException : Exception
+	{
+		this(string msg)
+		{
+			super(msg);
+		}
+	}
+
+	Result!(int, MyException) noWrap = err(new MyException("an error occurred here!"));
+	Result!(int, string) wrapped = err("an error occurred here!");
+
+	static assert(!noWrap.ErrWillBeWrapped);
+	static assert(wrapped.ErrWillBeWrapped);
+
+	try { *noWrap; } catch (MyException) {}
+	try { *wrapped; } catch (ResultException!string) {}
 }
