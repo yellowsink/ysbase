@@ -7,7 +7,7 @@ module ysbase.tagged_union;
 
 import ysbase : Unit, unit;
 
-import ysbase.templating : MinimumUIntToHold, EnumifyUnit, zipMap, concat, map;
+import ysbase.templating : MinimumUIntToHold, EnumifyUnit, zipMap, concat, map, UppercaseFirst;
 
 import std.traits : FieldNameTuple, Fields, fullyQualifiedName, isInstanceOf;
 
@@ -25,6 +25,24 @@ private template _generateTagT(T, Backing)
 
 	enum _generateTagT = working ~ "}";
 }
+
+private enum _generateCaseConstructor(string caseName) =
+	"static TaggedUnion new" ~ UppercaseFirst!caseName ~ "(A...)(A a) @safe => TaggedUnion._cons!\"" ~ caseName ~ "\"(forward!a);";
+
+private enum _generateCaseGetter(string caseName) =
+	"auto " ~ caseName ~ "() inout pure @safe => TaggedUnion._getCaseValue!\"" ~ caseName ~ "\"();";
+
+private enum _generateCaseGetterRef(string caseName) =
+	"ref auto " ~ caseName ~ "Ref() inout @system => TaggedUnion._getCaseValueRef!\"" ~ caseName ~ "\"();";
+
+private enum _generateCaseSetterAnonymous(string caseName) =
+	"void " ~ caseName ~ "(A)(A a) @safe => TaggedUnion._setCaseValue!\"" ~ caseName ~ "\"(forward!a);";
+
+private enum _generateCaseSetterNamed(string caseName) =
+	"void set" ~ UppercaseFirst!caseName ~ "(A...)(A a) @safe => TaggedUnion._setCaseValue!\"" ~ caseName ~ "\"(forward!a);";
+
+private enum _generateCaseChecker(string caseName) =
+	"bool is" ~ UppercaseFirst!caseName ~ "() @safe => TaggedUnion._isCase!\"" ~ caseName ~ "\"();";
 
 /// The exception thrown when an incorrect union access was made.
 class WrongUnionCaseException(TU) if (isInstanceOf!(TaggedUnion, TU)) : Exception
@@ -66,6 +84,8 @@ $(SRCL ysbase/tagged_union.d)
 +/
 struct TaggedUnion(T) if (is(T == union))
 {
+	import core.lifetime : forward;
+
 	/// The unsigned integral type that holds the union tag - this is the smallest unsigned integer possible.
 	alias TagTBacking = MinimumUIntToHold!(FieldNameTuple!T.length);
 
@@ -133,7 +153,7 @@ struct TaggedUnion(T) if (is(T == union))
 		bool isCaseName() const pure @safe;
 	}
 
-	// now for the real implementations!
+	// real implementations of the actual logic
 	version (D_Ddoc) {}
 	else
 	{
@@ -194,31 +214,94 @@ struct TaggedUnion(T) if (is(T == union))
 
 			return mixin("_backing." ~ caseName);
 		}
+
+		// void caseName(YourType value) @safe;
+		// void setCaseName(YourType value) @safe;
+		// void setCaseName() @safe;
+		private void _setCaseValue(string caseName, VV...)(VV valueOrVoid) @safe
+		{
+			static assert(VV.length <= 1);
+
+			TagT tag = mixin("TagT." ~ caseName);
+
+			alias Type = typeof(mixin("T." ~ caseName));
+
+			static if (!is(Type == Unit))
+				static assert(VV.length == 1, "Cannot try to set a non-unit union case without a value.");
+
+			static if (VV.length) // it's fine to just omit this for unit
+				mixin("_backing." ~ caseName ~ " = valueOrVoid[0];");
+
+			// if the previous throws this won't run so we remain valid
+			_tag = tag;
+		}
+
+		// bool isCaseName() const pure @safe;
+		private bool _isCase(string caseName)() const pure @safe => _tag == mixin("TagT." ~ caseName);
+	}
+
+	// generate all functions of each type
+	static foreach (name; CaseNames)
+	{
+		mixin(_generateCaseConstructor!name);
+		mixin(_generateCaseSetterNamed!name);
+		mixin(_generateCaseChecker!name);
+
+		// non-void-only
+		static if (!is(typeof(mixin("T." ~ name)) == void))
+		{
+			mixin(_generateCaseGetter!name);
+			mixin(_generateCaseGetterRef!name);
+			mixin(_generateCaseSetterAnonymous!name);
+		}
 	}
 }
 
-
-// example union spec to scaffold type from
-union TestInput
-{
-	int x;
-	bool y;
-	Unit z; // payload-less case
-}
-
-alias TestUnion = TaggedUnion!TestInput;
-
+///
 unittest
 {
-	// instantiate the template so we get errors
-	TestUnion un = TestUnion._cons!"x"(5);
+	union TestInput
+	{
+		int x;
+		bool y;
+		Unit z; // payload-less case
+	}
 
-	un._getCaseValue!"x"();
+	alias TestUnion = TaggedUnion!TestInput;
 
-	un._getCaseValueRef!"x"() += 2;
+	auto un = TestUnion.newX(5);
 
+	assert(un.x == 5); // access x
+
+	un.xRef += 2; // get a ref to allow in-place modification
+
+	assert(un.isX);
+
+	// accessing another case throws
 	try {
-		un._getCaseValue!"y"();
+		un.y;
 		assert(0);
 	} catch (WrongUnionCaseException!TestUnion) {}
+
+	// change the case to z
+	un.setZ();
+	assert(un.isZ);
+
+	// change the case to y
+	un.y = true;
+	assert(un.isY);
+}
+
+///
+unittest
+{
+	// zero size unions are basically just enums
+	union OopsAllUnits
+	{
+		Unit x;
+		Unit y;
+		Unit z;
+	}
+
+	auto tu = TaggedUnion!OopsAllUnits.newX();
 }
