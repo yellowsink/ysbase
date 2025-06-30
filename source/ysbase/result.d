@@ -282,11 +282,11 @@ struct Result(T, E) if (!is(T == void) && !is(E == void) && isCopyable!E)
 	Nullable!E tryGetError() pure nothrow @trusted => !_hasValue ? Nullable!E(_value.err) : Nullable!E.init;
 
 	/// `==` operator implementation
-	bool opEquals(R)(auto ref const R other) const pure nothrow if (isInstanceOf!(Result, R))
+	bool opEquals(R)(auto ref const R other) const pure nothrow @trusted if (isInstanceOf!(.Result, R))
 	{
 		if (_hasValue != other._hasValue) return false;
 
-		return hasValue
+		return _hasValue
 			? _value.val == other._value.val
 			: _value.err == other._value.err;
 	}
@@ -508,3 +508,42 @@ unittest
 	try { *noWrap; } catch (MyException) {}
 	try { *wrapped; } catch (ResultException!string) {}
 }
+
+/// results can be compared and placed into associative arrays
+unittest
+{
+	import ysbase : getHashOf;
+
+	Result!(int, string) r1 = 3;
+	Result!(int, string) r2 = 3;
+
+	assert(r1 == r2);
+	assert(r1.toHash() == r2.toHash());
+
+	r2 = err("aaa!");
+	assert(r1 != r2);
+	r1 = err("wha?");
+	assert(r1 != r2);
+}
+
+/// Functional-style operations on results
+// TODO: map does not compile due to lambdas not having any default type in D
+/* unittest
+{
+	Result!(bool, string) success;
+	Result!(bool, string) failure = err("err");
+
+	// apply function to success value, do nothing to errors
+	auto mappedSuccess = success.map((v) => !v);
+	auto mappedFailure = failure.map((v) => !v);
+	assert(!*mappedSuccess);
+	assert(failure == mappedFailure);
+
+	// apply function to error value, do nothing to successes
+	auto errMappedSuccess = success.map_err((e) => e ~ " and some extra detail");
+	auto errMappedFailure = success.map_err((e) => e ~ " and some extra detail");
+	assert(success == errMappedSuccess);
+	assert(errMappedFailure.getError == "err and some extra detail");
+
+
+} */
