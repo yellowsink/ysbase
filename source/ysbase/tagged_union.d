@@ -226,11 +226,14 @@ struct TaggedUnion(T) if (is(T == union))
 
 			alias Type = typeof(mixin("T." ~ caseName));
 
+			// Unit fields are presented as real values but are actually fake and are compile time constants -> immutable
 			static if (!is(Type == Unit))
-				static assert(VV.length == 1, "Cannot try to set a non-unit union case without a value.");
-
-			static if (VV.length) // it's fine to just omit this for unit
-				mixin("_backing." ~ caseName ~ " = valueOrVoid[0];");
+			{
+				static if (VV.length)
+					mixin("_backing." ~ caseName ~ " = valueOrVoid[0];");
+				else
+					mixin("_backing." ~ caseName ~ " = typeof(_backing." ~ caseName ~ ").init;");
+			}
 
 			// if the previous throws this won't run so we remain valid
 			_tag = tag;
@@ -246,14 +249,9 @@ struct TaggedUnion(T) if (is(T == union))
 		mixin(_generateCaseConstructor!name);
 		mixin(_generateCaseSetterNamed!name);
 		mixin(_generateCaseChecker!name);
-
-		// non-void-only
-		static if (!is(typeof(mixin("T." ~ name)) == void))
-		{
-			mixin(_generateCaseGetter!name);
-			mixin(_generateCaseGetterRef!name);
-			mixin(_generateCaseSetterAnonymous!name);
-		}
+		mixin(_generateCaseGetter!name);
+		mixin(_generateCaseGetterRef!name);
+		mixin(_generateCaseSetterAnonymous!name);
 	}
 }
 
@@ -287,9 +285,15 @@ unittest
 	un.setZ();
 	assert(un.isZ);
 
-	// change the case to y
+	// payloadless cases are of the singleton type Unit, to allow them to be easily used with generics
+	import ysbase : unit;
+	assert(un.z == unit);
+	un.z = unit;
+
+	// change the case to y just by setting it.
+	// `un.setY()` will initialize to `T.init`, `un.setY(value)` is equivalent to `un.y = value`
 	un.y = true;
-	assert(un.isY);
+	assert(un.y == false);
 }
 
 ///
