@@ -17,7 +17,7 @@ License: $(LINK2 https://unlicense.org, Unlicense)
 +/
 module ysbase.result;
 
-import std.traits : isInstanceOf, isCallable, ReturnType, hasElaborateDestructor, isCopyable;
+import std.traits : isInstanceOf, isCallable, ReturnType, hasElaborateDestructor, isCopyable, TemplateArgsOf;
 import std.typecons : Nullable;
 
 import ysbase : zcmove;
@@ -292,6 +292,21 @@ struct Result(T, E) if (!is(T == void) && !is(E == void) && isCopyable!E)
 	}
 
 	/// ditto
+	bool opEquals(R)(auto ref const R other) const pure nothrow @trusted if (isInstanceOf!(OkWrap, R) || isInstanceOf!(ErrWrap, R))
+	{
+		enum rhsOk = isInstanceOf!(OkWrap, R);
+
+		static if (rhsOk)
+		{
+			return _hasValue && _value.val == other._ok;
+		}
+		else
+		{
+			return !_hasValue && _value.err == other._err;
+		}
+	}
+
+	/// ditto
 	// used for associative arrays and the like
 	// ideally want const @nogc @trusted pure nothrow but we just gotta go with what we can
 	size_t toHash()() @trusted
@@ -318,12 +333,12 @@ struct Result(T, E) if (!is(T == void) && !is(E == void) && isCopyable!E)
 	Result!(ReturnType!F, E) map(F)(auto ref F func) if (isCallable!F) => map!((v) => func(v));
 
 	/// If this value is Ok, lazily return res2, else just return self
-	inout(R) and_then(R)(lazy inout(R) res2) const pure nothrow if (isInstanceOf!(Result, R) && is(R.ErrType == E))
+	R and_then(R)(lazy R res2) if (isInstanceOf!(.Result, R) && is(R.ErrType == E))
 	{
 		if (_hasValue)
 			return res2;
 		else
-			return err(_value.err).insteadOf!R.ValueType;
+			return .err(_value.err).insteadOf!(R.ValueType);
 	}
 
 	/// If this value is Err, map it through the function, else just return self
@@ -341,10 +356,10 @@ struct Result(T, E) if (!is(T == void) && !is(E == void) && isCopyable!E)
 	Result!(T, ReturnType!F) map_err(F)(auto ref F func)if (isCallable!F) => map_err!((e) => func(e));
 
 	/// If this value is Err, lazily return res2, else just return self
-	inout(R) or_else(R)(lazy inout(R) res2) const pure nothrow if (isInstanceOf!(Result, R) && is(R.ValueType == T))
+	R or_else(R)(lazy R res2) if (isInstanceOf!(.Result, R) && is(R.ValueType == T))
 	{
 		if (_hasValue)
-			return ok(_value.val).insteadOf!(R.ErrType);
+			return .ok(_value.val).insteadOf!(R.ErrType);
 		else
 			return res2;
 	}
@@ -352,9 +367,9 @@ struct Result(T, E) if (!is(T == void) && !is(E == void) && isCopyable!E)
 	/// Converts a result of a nullable T into a nullable result
 	/// Ok(null) becomes null, Ok(NotNull(v)) becomes NotNull(Ok(v)), and Err(e) becomes NotNull(Err(e))
 	static if (isInstanceOf!(Nullable, T))
-	Nullable!(Result!(typeof(T.get), E)) transpose() const pure nothrow
+	Nullable!(Result!(TemplateArgsOf!T, E)) transpose() pure nothrow @trusted
 	{
-		alias OkBranchType = typeof(T.get);
+		alias OkBranchType = TemplateArgsOf!T;
 		alias InnerResult = Result!(OkBranchType, E);
 
 		if (_hasValue)
@@ -362,16 +377,16 @@ struct Result(T, E) if (!is(T == void) && !is(E == void) && isCopyable!E)
 			if (_value.val.isNull)
 				return Nullable!InnerResult.init;
 			else
-				return Nullable!InnerResult(ok(_value.val.get).insteadOf!E);
+				return Nullable!InnerResult(.ok(_value.val.get).insteadOf!E);
 		}
 		else
-			return Nullable!InnerResult(err(_value.err).insteadOf!OkBranchType);
+			return Nullable!InnerResult(.err(_value.err).insteadOf!OkBranchType);
 	}
 
 	/// Flattens a `Result(Result(T, E), E)` to a `Result(T, E)`. The logic is `isOk ? get : this`.
-	static if (isInstanceOf!(Result, T) && is(T.ErrType == E))
-	inout(T) flatten() inout pure nothrow @trusted
-		=> _hasValue ? _value.val : err(_value.err).insteadOf!(T.ValueType);
+	static if (isInstanceOf!(.Result, T) && is(T.ErrType == E))
+	T flatten() pure nothrow @trusted
+		=> _hasValue ? _value.val : .err(_value.err).insteadOf!(T.ValueType);
 }
 
 /// Local error handling with Result:
@@ -567,9 +582,49 @@ unittest
 	assert(mappedErr2.getError == "errerr");
 }
 
-/* /// Functional-style compositions of multiple / nested results
+/// Functional-style compositions of multiple / nested results
 unittest
 {
+	Result!(int, int) success1 = 1;
+	Result!(int, int) success2 = 2;
+	Result!(int, int) success3 = 3;
+	Result!(int, int) failure1 = err(1);
+	Result!(int, int) failure2 = err(2);
+	Result!(int, int) failure3 = err(3);
 
+	// and_then takes the first error it encounters, or the rightmost success case if there are no errors
+	assert(success1.and_then(success2) == ok(2));
+	assert(failure1.and_then(failure2) == err(1));
+
+	assert(success1.and_then(failure2).and_then(success3) == err(2));
+
+	// or_else is the opposite - it takes the first success it encounters, or the rightmost error if there is no success
+	assert(success1.or_else(success2) == ok(1));
+	assert(failure1.or_else(failure2) == err(2));
+
+	assert(success1.or_else(failure2).or_else(success3) == ok(1));
+
+	// flatten a nested result, note `.flatten` is only defined if the error types are the same
+	alias Nested = Result!(Result!(int, string), string);
+
+	auto doubleSuccess = Nested(ok(5).insteadOf!string);
+	auto nestedFailure = Nested(err("inner").insteadOf!int);
+	auto outerFailure = Nested.err("outer");
+
+	assert(doubleSuccess.flatten == ok(5));
+	assert(nestedFailure.flatten == err("inner"));
+	assert(outerFailure.flatten == err("outer"));
+
+	// convert a Result!(Nullable!T) into a Nullable!(Result!T)
+	// exactly equivalent to Rust's `Result::transpose`
+	import std.typecons : Nullable, nullable;
+
+	Result!(Nullable!int, string) okNull;
+	Result!(Nullable!int, string) okNotNull = nullable(5);
+	Result!(Nullable!int, string) errN = err(":(");
+
+	assert(okNull.transpose.isNull);
+	assert(okNotNull.transpose.get == ok(5));
+	assert(errN.transpose.get == err(":("));
 }
- */
+
