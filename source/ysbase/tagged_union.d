@@ -132,6 +132,35 @@ struct TaggedUnion(T) if (is(T == union))
 	/// Returns the value as a raw union. This is unsafe but allows you to direct get what you need.
 	BackingT rawBacking() const pure nothrow @system => _backing;
 
+	/// `==` operator implementation
+	bool opEquals()(const TaggedUnion other) const
+	{
+		if (_tag != other._tag) return false;
+
+		template _genCase(T, string name)
+		{
+			static if(isUnit!T)
+				enum _genCase = "case " ~ name ~ ": return true;";
+			else
+				enum _genCase = "case " ~ name ~ ": return _backing." ~ name ~ " == other._backing." ~ name ~ ";";
+		}
+
+		alias cases = concat!("\n", zipMap!(_genCase, CasePayloads, CaseNames));
+
+		mixin("with (TagT) final switch (_tag) {" ~ cases ~ "}");
+	}
+
+	size_t toHash()()
+	{
+		import ysbase : getHashOf;
+
+		enum _genCase(T, string name) = "case " ~ name ~ ": return getHashOf(_backing." ~ name ~");";
+
+		alias cases = concat!("\n", zipMap!(_genCase, CasePayloads, CaseNames));
+
+		mixin("with (TagT) final switch (_tag) {" ~ cases ~ "}");
+	}
+
 	version (D_Ddoc)
 	{
 		private struct YourType {}
@@ -190,7 +219,7 @@ struct TaggedUnion(T) if (is(T == union))
 		}
 
 		// static constructor
-		private static TaggedUnion _cons(string caseName, VV...)(VV valueOrVoid) pure nothrow @safe
+		private static TaggedUnion _cons(string caseName, VV...)(VV valueOrVoid) pure nothrow @trusted
 		{
 			static assert(VV.length <= 1);
 
@@ -225,7 +254,7 @@ struct TaggedUnion(T) if (is(T == union))
 		// void caseName(YourType value) @safe;
 		// void setCaseName(YourType value) @safe;
 		// void setCaseName() @safe;
-		private void _setCaseValue(string caseName, VV...)(VV valueOrVoid) @safe
+		private void _setCaseValue(string caseName, VV...)(VV valueOrVoid) @trusted
 		{
 			static assert(VV.length <= 1);
 
@@ -363,4 +392,30 @@ unittest
 	Uncopyable moved = move(tmpl.barRef);
 	assert(moved.x == 10);
 	assert(tmpl.barRef.x == 0);
+}
+
+///
+unittest
+{
+	union Tmpl
+	{
+		int x;
+		string y;
+	}
+
+	alias Union = TaggedUnion!Tmpl;
+
+	auto t5 = Union.newX(5);
+	auto t7 = Union.newX(7);
+	auto tHi = Union.newY("hi");
+
+	assert(t5 == t5);
+	assert(t5 != t7);
+	assert(t5 != tHi);
+
+	Union tHi2;
+	tHi2.y = "hi";
+	assert(tHi == tHi2);
+
+	assert(tHi.toHash() == tHi2.toHash());
 }
