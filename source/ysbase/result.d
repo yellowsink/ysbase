@@ -398,6 +398,10 @@ unittest
 
 		// do some work...
 		res = ok(5);
+		// also valid
+		res = err(":(");
+		// also valid
+		res = 5;
 
 		return res;
 	}
