@@ -16,20 +16,29 @@ This aims to make a package I can include as the base for my projects. Hopefully
    * [WIP] shared allocator building blocks
    * [WIP] shared global allocator by default
    * [WIP] smart pointers and collections
-     - [x] smart pointers
-     - [ ] vectors
+     - [WIP] smart pointers
+       * [ ] intrusive pointers
+     - [WIP] vectors
+     - [WIP] linked list
      - [ ] strings
      - [x] ref-counted struct wrappers
      - Inspired by the API of [BTL](https://submada.github.io/btl/) but using a completely original implementation.
      - With practical considerations inspired by my time writing embedded software in D
 
+ - Type utilities
+   * [x] Results
+   * [x] Tagged unions
+   * [x] Unit singleton type
+
  - Magic bullshittery utilities,
    sourced from both general projects of mine and especially from
    [3dskit](https://github.com/ys-3dskit/3dskit-dlang/tree/7268815/ys3ds)
    * [x] `transmute!`, the equivalent of rust's `std::mem::transmute` or C++'s `std::bit_cast`.
+   * [x] variants of move
+   * [x] swap and replace
    * [ ] `string` ⇋ `String` ⇋ `char*` conversion tools
 
- - template stuff
+ - misc template stuff
 
 This list will hopefully grow as I write more small lil utils.
 
