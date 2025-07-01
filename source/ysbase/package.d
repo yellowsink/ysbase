@@ -210,3 +210,9 @@ version (D_Ddoc)
 	static Unit unit;
 else
 	enum unit = Unit();
+
+/// If the provided type or value is unit
+public enum isUnit(T) = __traits(isSame, T, Unit);
+
+/// ditto
+public enum isUnit(alias S) = isUnit!(typeof(S));

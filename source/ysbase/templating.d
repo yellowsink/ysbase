@@ -14,6 +14,8 @@ module ysbase.templating;
 
 // beware: insanity lies ahead, but the best kind of insanity :)
 
+import ysbase : isUnit;
+
 import std.traits;
 import std.meta;
 
@@ -98,7 +100,7 @@ public mixin template EnumifyUnit(T) if (is(T == struct) || is(T == union))
 
 		static if (Fields!T.length != N)
 		{
-			static if (__traits(isSame, Fields!T[N], ysbase.Unit))
+			static if (isUnit!(Fields!T[N]))
 				mixin("enum " ~ FieldNameTuple!T[N] ~ " = ysbase.Unit();");
 			else
 			// fullyQualifiedName preserves shared, const, etc.

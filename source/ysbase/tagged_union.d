@@ -5,11 +5,11 @@ License: $(LINK2 https://unlicense.org, Unlicense)
 +/
 module ysbase.tagged_union;
 
-import ysbase : Unit, unit;
+import ysbase : Unit, unit, isUnit;
 
 import ysbase.templating : MinimumUIntToHold, EnumifyUnit, zipMap, concat, map, UppercaseFirst;
 
-import std.traits : FieldNameTuple, Fields, fullyQualifiedName, isInstanceOf;
+import std.traits : FieldNameTuple, Fields, fullyQualifiedName, isInstanceOf, isCopyable;
 
 import std.meta : Alias;
 
@@ -40,6 +40,9 @@ private enum _generateCaseSetterAnonymous(string caseName) =
 
 private enum _generateCaseSetterNamed(string caseName) =
 	"void set" ~ UppercaseFirst!caseName ~ "(A...)(A a) @safe => TaggedUnion._setCaseValue!\"" ~ caseName ~ "\"(forward!a);";
+
+private enum _generateCaseEmplace(string caseName) =
+	"void emplace" ~ UppercaseFirst!caseName ~ "(A...)(A a) => TaggedUnion._emplaceCaseValue!\"" ~ caseName ~ "\"(forward!a);";
 
 private enum _generateCaseChecker(string caseName) =
 	"bool is" ~ UppercaseFirst!caseName ~ "() @safe => TaggedUnion._isCase!\"" ~ caseName ~ "\"();";
@@ -99,10 +102,11 @@ struct TaggedUnion(T) if (is(T == union))
 
 	/// `BackingT` is the raw union holding the contents of the tagged union.
 	/// It is identical to `T` but with any `Unit x;` fields swapped for `enum x = unit;` instead.
-	union BackingT
+	/* union BackingT
 	{
 		mixin EnumifyUnit!T;
-	}
+	} */
+	alias BackingT = T;
 
 	/// A compile time sequence of the string names of the cases
 	alias CaseNames = FieldNameTuple!T;
@@ -115,6 +119,9 @@ struct TaggedUnion(T) if (is(T == union))
 
 	/// A compile time sequence of fully qualified case strings "payloadtype name" suitable for mixins
 	alias CaseDeclarators = zipMap!(_qualTypeAndName, CasePayloads, CaseNames);
+
+	private enum TagT _tagOf(string caseName) = mixin("TagT." ~ caseName);
+	private alias _typeOf(string caseName) = typeof(mixin("T." ~ caseName));
 
 	private TagT _tag;
 	private BackingT _backing;
@@ -130,9 +137,10 @@ struct TaggedUnion(T) if (is(T == union))
 		private struct YourType {}
 
 		/// Static constructor for a specific tagged union case
-		static TaggedUnion caseName(YourType value) @safe;
+		static TaggedUnion newCaseName(YourType value) @safe;
 
-		/// Gets the value for this case if its set, or throws if it is not this case
+		/// Gets the value for this case if its set, or throws if it is not this case.
+		/// Only defined when `YourType` is copyable.
 		inout(YourType) caseName() inout pure @safe;
 
 		/// Gets a reference to the value for this case if its set, or throws if it is not this case
@@ -149,6 +157,9 @@ struct TaggedUnion(T) if (is(T == union))
 		/// This is because `.caseName = unit` (which works!) looks ugly.
 		void setCaseName() @safe;
 
+		/// Constructs the case name in-place in the tagged union
+		void emplaceCaseName(A...)(A args) @safe;
+
 		/// Returns true if the current case is `caseName`
 		bool isCaseName() const pure @safe;
 	}
@@ -161,7 +172,7 @@ struct TaggedUnion(T) if (is(T == union))
 		{
 			template _genCase(T, string name)
 			{
-				static if (is(T == Unit))
+				static if (isUnit!T)
 					enum _genCase = "case " ~ name ~ ": break;";
 				else
 					enum _genCase = "case " ~ name ~ ": destroy!false(_backing." ~ name ~ "); break;";
@@ -174,8 +185,8 @@ struct TaggedUnion(T) if (is(T == union))
 
 		private void _throwIfWrongCase(string caseName)() const pure @safe
 		{
-			if (_tag != mixin("TagT." ~ caseName))
-				throw new WrongUnionCaseException!TaggedUnion(this, mixin("TagT." ~ caseName));
+			if (_tag != _tagOf!caseName)
+				throw new WrongUnionCaseException!TaggedUnion(this, _tagOf!caseName);
 		}
 
 		// static constructor
@@ -183,15 +194,11 @@ struct TaggedUnion(T) if (is(T == union))
 		{
 			static assert(VV.length <= 1);
 
-			TagT tag = mixin("TagT." ~ caseName);
-
-			alias Type = typeof(mixin("T." ~ caseName));
-
-			static if (!is(Type == Unit))
+			static if (!isUnit!(_typeOf!caseName))
 				static assert(VV.length == 1, "Cannot try to initialize a non-unit union case without a value");
 
 			TaggedUnion u;
-			u._tag = tag;
+			u._tag = _tagOf!caseName;
 
 			static if (VV.length) // it's fine to just omit this for unit
 				mixin("u._backing." ~ caseName ~ " = valueOrVoid[0];");
@@ -222,21 +229,25 @@ struct TaggedUnion(T) if (is(T == union))
 		{
 			static assert(VV.length <= 1);
 
-			TagT tag = mixin("TagT." ~ caseName);
-
-			alias Type = typeof(mixin("T." ~ caseName));
-
-			// Unit fields are presented as real values but are actually fake and are compile time constants -> immutable
-			static if (!is(Type == Unit))
-			{
-				static if (VV.length)
-					mixin("_backing." ~ caseName ~ " = valueOrVoid[0];");
-				else
-					mixin("_backing." ~ caseName ~ " = typeof(_backing." ~ caseName ~ ").init;");
-			}
+			static if (VV.length)
+				mixin("_backing." ~ caseName ~ " = valueOrVoid[0];");
+			else
+				mixin("_backing." ~ caseName ~ " = typeof(_backing." ~ caseName ~ ").init;");
 
 			// if the previous throws this won't run so we remain valid
-			_tag = tag;
+			_tag = _tagOf!caseName;
+		}
+
+		// void emplaceCaseName(A...)(A args) @safe;
+		private void _emplaceCaseValue(string caseName, A...)(A args)
+		{
+			import core.lifetime : forward, emplace;
+
+			alias Type = _typeOf!caseName;
+
+			emplace!Type(mixin("&_backing." ~ caseName), forward!args);
+
+			_tag = _tagOf!caseName;
 		}
 
 		// bool isCaseName() const pure @safe;
@@ -249,9 +260,14 @@ struct TaggedUnion(T) if (is(T == union))
 		mixin(_generateCaseConstructor!name);
 		mixin(_generateCaseSetterNamed!name);
 		mixin(_generateCaseChecker!name);
-		mixin(_generateCaseGetter!name);
 		mixin(_generateCaseGetterRef!name);
+		mixin(_generateCaseEmplace!name);
 		mixin(_generateCaseSetterAnonymous!name);
+
+		static if (isCopyable!(typeof(mixin("T." ~ name))))
+		{
+			mixin(_generateCaseGetter!name);
+		}
 	}
 }
 
@@ -308,4 +324,43 @@ unittest
 	}
 
 	auto tu = TaggedUnion!OopsAllUnits.newX();
+}
+
+
+///
+unittest
+{
+	// construct a case in-place
+	static struct Uncopyable
+	{
+		@disable this(this);
+
+		int x;
+
+		this(int y)
+		{
+			x = 2 * y;
+		}
+	}
+
+	union Template
+	{
+		Unit foo;
+		Uncopyable bar;
+	}
+
+	auto tmpl = TaggedUnion!Template.newFoo();
+
+	assert(tmpl.isFoo);
+
+	tmpl.emplaceBar(5);
+
+	assert(tmpl.barRef.x == 10);
+
+	// move out of the union
+	import core.lifetime : move;
+
+	Uncopyable moved = move(tmpl.barRef);
+	assert(moved.x == 10);
+	assert(tmpl.barRef.x == 0);
 }
