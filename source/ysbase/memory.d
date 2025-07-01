@@ -5,7 +5,8 @@ It is inspired by $(LINK2 https://dlang.org/phobos/core_lifetime.html, $(D core.
 $(LINK2 https://doc.rust-lang.org/stable/std/mem, `std::mem`).
 
 Note that while some of the functions here exactly match those in `std::mem`, the equivalent of `std::mem::take` is
-`core.lifetime.move`, not included here.
+`core.lifetime.move`, not included here, and similar for `std::mem::drop` and `object.destroy`, and `std::mem::forget`
+and `core.lifetime.emplace`.
 
 $(SRCL ysbase/memory.d)
 
@@ -30,7 +31,7 @@ module ysbase.memory;
  + This has the side effect that it is very difficult to explicitly specify.
  + I suggest using $(LINK2 https://dlang.org/phobos/std_meta.html#.Instantiate, Instantiate).
  +
- + $(SRCLL ysbase/memory.d, 32)
+ + $(SRCLL ysbase/memory.d, 36)
  +/
 template transmute(R)
 {
@@ -140,7 +141,7 @@ unittest
  + It can optionally be set to move for some copyable types, if the type has an *elaborate* copy process - that is,
  + instead of "copy whenever possible", "copy whenever cheap".
  +
- + $(SRCLL ysbase/memory.d, 142)
+ + $(SRCLL ysbase/memory.d, 146)
  +/
 T zcmove(T, bool MoveIfElab = false)(scope ref return T src) @safe
 {
@@ -153,12 +154,52 @@ T zcmove(T, bool MoveIfElab = false)(scope ref return T src) @safe
 		return src;
 }
 
-/++ `dirtyMove` performs a safe move in all aspects other than leaving the source untouched.
+/++ `dirtyMove` performs a safe move, in all aspects other than leaving the source untouched.
  + This is ONLY safe if you know for 100% that you will be overwriting the source immediately after this.
  +
- + $(SRCLL ysbase/memory.d, 158)
+ + $(SRCLL ysbase/memory.d, 162)
  +/
 void dirtyMove(T)(ref T source, ref T target)
+{
+	import std.traits : hasElaborateDestructor;
+
+	static if (is(T == struct) && hasElaborateDestructor!T)
+		destroy!false(target);
+
+	dirtyMoveEmplace(source, target);
+}
+
+///
+unittest
+{
+	int destructCount;
+
+	struct Test
+	{
+		@disable this(this);
+		~this() { destructCount++; }
+		int x;
+	}
+
+	Test target;
+
+	Test source;
+	source.x = 5;
+
+	dirtyMove(source, target);
+
+	assert(destructCount == 1); // target should have been destroyed prior to move
+
+	assert(source.x == target.x); // source should not have been reset
+}
+
+/++ `dirtyMoveEmplace` performs a move, assuming that the target is uninitialized and need not be destroyed, and leaves the source untouched.
+ + This is ONLY safe if you know for 100% that you will be overwriting the source immediately after this,
+ + and the target is not a valid object and does not need destroying first.
+ +
+ + $(SRCLL ysbase/memory.d, 202)
+ +/
+void dirtyMoveEmplace(T)(ref T source, ref T target)
 {
 	import core.internal.moving : __move_post_blt; // lol
 
@@ -167,9 +208,33 @@ void dirtyMove(T)(ref T source, ref T target)
 	__move_post_blt(target, source);
 }
 
+///
+unittest
+{
+	int destructCount;
+
+	struct Test
+	{
+		@disable this(this);
+		~this() { destructCount++; }
+		int x;
+	}
+
+	Test target;
+
+	Test source;
+	source.x = 5;
+
+	dirtyMoveEmplace(source, target);
+
+	assert(destructCount == 0); // target should not have been destroyed prior to move
+
+	assert(source.x == target.x); // source should not have been reset
+}
+
 /++ `swap` moves two values into each others' positions without copy-constructing etc them.
  +
- + $(SRCLL ysbase/memory.d, 171)
+ + $(SRCLL ysbase/memory.d, 239)
  +/
 void swap(T)(ref T x, ref T y) @trusted
 {
@@ -177,9 +242,9 @@ void swap(T)(ref T x, ref T y) @trusted
 	// don't use `move` to avoid extra initializations
 	// still need to call post moves though
 	T tmp = void;
-	dirtyMove(x, tmp);
-	dirtyMove(y, x);
-	dirtyMove(tmp, y);
+	dirtyMoveEmplace(x, tmp);
+	dirtyMoveEmplace(y, x);
+	dirtyMoveEmplace(tmp, y);
 }
 
 ///
