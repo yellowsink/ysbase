@@ -26,7 +26,7 @@ module ysbase;
 ///
 /// It will have as many other attributes as is possible - you should aim for `toHash() @nogc @safe pure nothrow`.
 ///
-/// $(SRCLL ysbase/package.d, 140)
+/// $(SRCLL ysbase/package.d, 30)
 size_t getHashOf(T)(auto ref const T value)
 {
 	import std.traits : hasMember;
@@ -67,9 +67,14 @@ any empty struct will do, but it is useful to have one globally recognised unit 
 Note that this is not an anonymous struct `struct Unit;` as that definition would make `Unit` impossible to handle
 except through a pointer indirection, and is thus no better than `void`!
 
-$(SRCLL ysbase/package.d, 206)
+$(SRCLL ysbase/package.d, 72)
 +/
-struct Unit {}
+struct Unit
+{
+	// why have the compiler emit a binary equals check, when units are singleton?
+	bool opEquals(const Unit) const => true;
+	size_t toHash() const @nogc @safe pure nothrow => 0;
+}
 
 version (D_Ddoc)
 	/// The pre-constructed singleton value of type `Unit`.
