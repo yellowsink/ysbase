@@ -20,7 +20,7 @@ module ysbase.result;
 import std.traits : isInstanceOf, isCallable, ReturnType, hasElaborateDestructor, isCopyable, TemplateArgsOf;
 import std.typecons : Nullable;
 
-import ysbase : zcmove;
+import ysbase.memory : zcmove;
 
 // Note about this module: I know barely anything about OpenD (https://opendlang.org/changes.html), and am skeptical of
 // its ability to go anywhere, but its `opImplicitCast` would make this implementation *hugely* nicer to use.

@@ -324,7 +324,7 @@ struct SmartPtrImpl(ControlBlock, ManagedType, bool hasAtomicRCs_, bool isWeak_ 
 	/// Equivalent to `copy_to_new` for trivially copyable and trivially destructible types.
 	SmartPtrImpl move_to_new()
 	{
-		import ysbase : zcmove;
+		import ysbase.memory : zcmove;
 
 		return SmartPtrImpl.make(zcmove!(ManagedType, true)(*this));
 	} */

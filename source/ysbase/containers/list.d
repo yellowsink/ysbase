@@ -325,7 +325,7 @@ public:
 	size_t toHash() const @nogc @safe pure nothrow
 	{
 		import std.traits : hasMember;
-		import ysbase : transmute;
+		import ysbase.memory : transmute;
 
 		size_t h;
 
