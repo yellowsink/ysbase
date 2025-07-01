@@ -304,13 +304,18 @@ struct Result(T, E) if (!is(T == void) && !is(E == void) && isCopyable!E)
 	// chaining ops:
 
 	/// If this value is Ok, map it through the function, else just return self
-	Result!(ReturnType!F, E) map(F)(auto ref F func) if (isCallable!F)
+	auto map(alias F)() @trusted
 	{
+		alias ResType = Result!(typeof(F(T.init)), E);
+
 		if (_hasValue)
-			return ok(func(_value.val)).insteadOf!E;
+			return ResType(F(_value.val));
 		else
-			return err(_value.err).insteadOf!(ReturnType!F);
+			return ResType.err(_value.err);
 	}
+
+	/// ditto
+	Result!(ReturnType!F, E) map(F)(auto ref F func) if (isCallable!F) => map!((v) => func(v));
 
 	/// If this value is Ok, lazily return res2, else just return self
 	inout(R) and_then(R)(lazy inout(R) res2) const pure nothrow if (isInstanceOf!(Result, R) && is(R.ErrType == E))
@@ -322,13 +327,18 @@ struct Result(T, E) if (!is(T == void) && !is(E == void) && isCopyable!E)
 	}
 
 	/// If this value is Err, map it through the function, else just return self
-	Result!(T, ReturnType!F) map_err(F)(auto ref F func) if (isCallable!F)
+	auto map_err(alias F)() @trusted
 	{
+		alias ResType = Result!(T, typeof(F(E.init)));
+
 		if (_hasValue)
-			return ok(_value.val).insteadOf!(ReturnType!F);
+			return ResType(_value.val);
 		else
-			return err(func(_value.err)).insteadOf!T;
+			return ResType.err(F(_value.err));
 	}
+
+	/// ditto
+	Result!(T, ReturnType!F) map_err(F)(auto ref F func)if (isCallable!F) => map_err!((e) => func(e));
 
 	/// If this value is Err, lazily return res2, else just return self
 	inout(R) or_else(R)(lazy inout(R) res2) const pure nothrow if (isInstanceOf!(Result, R) && is(R.ValueType == T))
@@ -526,24 +536,40 @@ unittest
 	assert(r1 != r2);
 }
 
-/// Functional-style operations on results
-// TODO: map does not compile due to lambdas not having any default type in D
-/* unittest
+/// Functional-style map on results
+unittest
 {
 	Result!(bool, string) success;
 	Result!(bool, string) failure = err("err");
 
 	// apply function to success value, do nothing to errors
-	auto mappedSuccess = success.map((v) => !v);
-	auto mappedFailure = failure.map((v) => !v);
-	assert(!*mappedSuccess);
+	// compile time function gets inlined
+	auto mappedSuccess = success.map!((v) => !v);
+	auto mappedFailure = failure.map!((v) => !v);
+	assert(*mappedSuccess);
 	assert(failure == mappedFailure);
 
+	// alternatively pass a function pointer or delegate of known signature at runtime
+	bool flip(bool b) => !b;
+
+	auto mappedSucc2 = success.map(&flip);
+	assert(*mappedSucc2);
+
 	// apply function to error value, do nothing to successes
-	auto errMappedSuccess = success.map_err((e) => e ~ " and some extra detail");
-	auto errMappedFailure = success.map_err((e) => e ~ " and some extra detail");
+	auto errMappedSuccess = success.map_err!((e) => e ~ " and some extra detail");
+	auto errMappedFailure = failure.map_err!((e) => e ~ " and some extra detail");
 	assert(success == errMappedSuccess);
 	assert(errMappedFailure.getError == "err and some extra detail");
 
+	string repeat(string s) => s ~ s;
 
-} */
+	auto mappedErr2 = failure.map_err(&repeat);
+	assert(mappedErr2.getError == "errerr");
+}
+
+/* /// Functional-style compositions of multiple / nested results
+unittest
+{
+
+}
+ */
