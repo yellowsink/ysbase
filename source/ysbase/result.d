@@ -311,9 +311,7 @@ struct Result(T, E) if (!is(T == void) && !is(E == void) && isCopyable!E)
 	// ideally want const @nogc @trusted pure nothrow but we just gotta go with what we can
 	size_t toHash()() @trusted
 	{
-		import ysbase : getHashOf;
-
-		return _hasValue ? getHashOf(_value.val) : getHashOf(_value.err);
+		return _hasValue ? hashOf(_value.val) : hashOf(_value.err);
 	}
 
 	// chaining ops:
@@ -541,8 +539,6 @@ unittest
 /// results can be compared and placed into associative arrays
 unittest
 {
-	import ysbase : getHashOf;
-
 	Result!(int, string) r1 = 3;
 	Result!(int, string) r2 = 3;
 

@@ -469,12 +469,10 @@ public:
 	// so we must actually hash the list contents ourselves.
 	size_t toHash()
 	{
-		import ysbase : getHashOf;
-
 		size_t h;
 
 		foreach (ref value; this)
-			h ^= getHashOf(value);
+			h ^= hashOf(value);
 
 		return h;
 	}

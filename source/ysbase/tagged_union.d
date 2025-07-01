@@ -152,9 +152,7 @@ struct TaggedUnion(T) if (is(T == union))
 
 	size_t toHash()()
 	{
-		import ysbase : getHashOf;
-
-		enum _genCase(T, string name) = "case " ~ name ~ ": return getHashOf(_backing." ~ name ~");";
+		enum _genCase(T, string name) = "case " ~ name ~ ": return hashOf(_backing." ~ name ~");";
 
 		alias cases = concat!("\n", zipMap!(_genCase, CasePayloads, CaseNames));
 

@@ -21,30 +21,6 @@ module ysbase;
 
 // dumb utilities can go directly in package.d lol
 
-/// Gets the hash code for an object. Calls `value.toHash` if it exists, else uses the class pointer, or hashes the struct value.
-/// If defined, `toHash` must be const.
-///
-/// It will have as many other attributes as is possible - you should aim for `toHash() @nogc @safe pure nothrow`.
-///
-/// $(SRCLL ysbase/package.d, 30)
-size_t getHashOf(T)(auto ref const T value)
-{
-	import std.traits : hasMember;
-	import ysbase.memory : transmute;
-
-	static if (hasMember!(T, "toHash"))
-		return value.toHash();
-	else static if (is(T == class) || is(T == interface))
-		return cast(size_t) (cast(void*) value);
-	else
-	{
-		// LDC can optimise this out beautifully https://godbolt.org/z/WfjnzEYhf (in the `ref` case it does lose tho)
-		import std.algorithm : fold;
-
-		return (()@trusted => value.transmute!(ubyte[T.sizeof]))().fold!((a, b) => a ^ b);
-	}
-}
-
 /++
 A singleton type that can be used in place of `void`, `noreturn`, or `typeof(null)` as potential "nothing" types.
 
@@ -67,7 +43,7 @@ any empty struct will do, but it is useful to have one globally recognised unit 
 Note that this is not an anonymous struct `struct Unit;` as that definition would make `Unit` impossible to handle
 except through a pointer indirection, and is thus no better than `void`!
 
-$(SRCLL ysbase/package.d, 72)
+$(SRCLL ysbase/package.d, 48)
 +/
 struct Unit
 {
