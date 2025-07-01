@@ -4,6 +4,9 @@ This module contains tools for memory management, especially copy-constructor el
 It is inspired by $(LINK2 https://dlang.org/phobos/core_lifetime.html, $(D core.lifetime)) and Rust's
 $(LINK2 https://doc.rust-lang.org/stable/std/mem, `std::mem`).
 
+Note that while some of the functions here exactly match those in `std::mem`, the equivalent of `std::mem::take` is
+`core.lifetime.move`, not included here.
+
 $(SRCL ysbase/memory.d)
 
 Copyright: Public Domain
@@ -166,11 +169,7 @@ void dirtyMove(T)(ref T source, ref T target)
 
 /++ `swap` moves two values into each others' positions without copy-constructing etc them.
  +
- + $(SRCLL ysbase/memory.d, 175)
- +
- + Params:
- +   src        = The value to move
- +   MoveIfElab = When true, will only copy trivially copyable types, not all copyable types.
+ + $(SRCLL ysbase/memory.d, 171)
  +/
 void swap(T)(ref T x, ref T y) @trusted
 {
@@ -227,7 +226,7 @@ unittest
 
 /++ `replace` moves a value out of the target and returns it to you, and moves the source into the target.
  +
- + $(SRCLL ysbase/memory.d, 237)
+ + $(SRCLL ysbase/memory.d, 232)
  +
  + Params:
  +   target     = The destination to move in and out of
@@ -235,14 +234,30 @@ unittest
  +/
 T replace(T)(ref T target, auto ref T source) @trusted
 {
+	import core.lifetime : moveEmplace;
+
 	// NRVO should make this ultra efficient for us :D
 	T ret = void;
 
 	dirtyMove(target, ret);
 
-	dirtyMove(source, target);
+	moveEmplace(source, target);
 
 	return ret;
 }
 
-// TODO unit test
+///
+unittest
+{
+	static struct Uncopyable { @disable this(this); int x; }
+
+	auto target = Uncopyable(1);
+
+	auto source = Uncopyable(2);
+
+	auto retreived = replace(target, source);
+
+	assert(retreived.x == 1);
+	assert(target.x == 2);
+	assert(source.x == 0);
+}
